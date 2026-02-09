@@ -1,10 +1,11 @@
 # AnyBURL
 
+AnyBURL23 comparison to older version
+<img width="1618" height="222" alt="image" src="https://github.com/user-attachments/assets/f15c6a17-deaf-486a-895d-1813d26ab20d" />
 
 
 
-
-## Using AnyBURL
+## Using AnyBURL23
 ```bash
 java -Xmx12G -cp AnyBURL-23-1x.jar {dataset} config-learn.properties
 ```

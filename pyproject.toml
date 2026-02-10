@@ -1,0 +1,15 @@
+[project]
+name = "scene-graph-project"
+version = "0.1.0"
+description = "Scene graph rule mining utilities"
+requires-python = ">=3.8"
+dependencies = [
+	"jinja2",
+	"typeguard",
+	"PyClause @ git+https://github.com/symbolic-kg/PyClause.git",
+	"networkx",
+]
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"

@@ -4,4 +4,7 @@
 
 **/datasets/visual_genome
 **/datasets/freebase
+**/datasets/CLEVR_v1.0
 .vscode/
+.venv/
+*.egg-info

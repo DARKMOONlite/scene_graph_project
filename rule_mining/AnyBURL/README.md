@@ -5,8 +5,21 @@ AnyBURL23 comparison to older version
 
 
 
-## Using AnyBURL23
+
+## Using AnyBURL
+
+## Training the Model
 ```bash
-java -Xmx12G -cp AnyBURL-23-1x.jar {dataset} config-learn.properties
+java -Xmx12G -cp AnyBURL-23-1x.jar de.unima.ki.anyburl.Learn config-learn.properties 
+```
+
+## Testing the Model
+```bash
+java -Xmx12G -cp AnyBURL-23-1x.jar de.unima.ki.anyburl.Apply config-apply.properties
+```
+
+## Evaluating the Model
+```bash
+java -Xmx12G -cp ./AnyBURL-23-1x.jar de.unima.ki.anyburl.Eval config-eval.properties
 ```
 

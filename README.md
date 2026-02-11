@@ -29,3 +29,11 @@ python3 -m venv .venv
 #install dependencies
 pip install -e . 
 ```
+
+
+
+
+
+
+## Interesting Links
+[**Scallop Interpreting over Graphs**](https://www.scallop-lang.org/log22/slides/log-2022-tutorial-scallop-part.pdf)

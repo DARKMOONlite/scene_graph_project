@@ -9,6 +9,7 @@ dependencies = [
 	"PyClause @ git+https://github.com/symbolic-kg/PyClause.git",
 	"visual_genome @ git+https://github.com/ranjaykrishna/visual_genome_python_driver.git",
 	"networkx",
+	"tqdm",
 ]
 
 [build-system]

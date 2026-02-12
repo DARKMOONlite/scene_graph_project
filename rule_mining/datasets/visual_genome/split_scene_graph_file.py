@@ -1,3 +1,5 @@
+""" Splits the scene_graphs.json file into a folder of individual scene graphs
+"""
 import visual_genome.local as vg
 
 

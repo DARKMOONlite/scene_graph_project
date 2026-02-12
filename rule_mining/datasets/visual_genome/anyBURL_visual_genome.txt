@@ -22065,7 +22065,7 @@
 5	5	1.0	IN(X,ocean) <= swimming_in(X, ocean)
 2	2	1.0	under(X,Y) <= has_front_paws_on(Y, X)
 4	2	0.5	in_held_by(X,Y) <= holding_white(Y, X)
-2	2	1.0	IN(X,Y) <= nearr(X, Y)
+2	2	1.0	IN(X,Y) <= near(X, Y)
 2	2	1.0	with(X,Y) <= tag_with(X, Y)
 3	2	0.6666666666666666	against(X,fence) <= behind(X, fence)
 2	2	1.0	has(image,Y) <= has(display, Y)

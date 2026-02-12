@@ -6,3 +6,4 @@ data
 .vscode/
 .venv/
 *.egg-info
+*.pyc

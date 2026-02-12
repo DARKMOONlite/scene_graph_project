@@ -170,6 +170,7 @@ def main():
         print(f"found {len(object_id_dict)} object instances")
         rules = load_results(input_path)
         modified_rules = replace_object_ids_with_name_in_file(rules=rules, object_id_dict=object_id_dict)
+        modified_rules = remove_low_confidence_rule(modified_rules,confidence_threshold=0.5)
         save_rules_to_file(modified_rules, output_path)
     except Exception as e:
         print(f"Exception: {e}")

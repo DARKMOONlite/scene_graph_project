@@ -2,7 +2,7 @@ from clause import Learner, Options
 from c_clause import Loader  # ty:ignore[unresolved-import]
 
 path_train = f"/home/sebastian/Documents/scene_graph_project/rule_mining/datasets/mini_sets/FB15/train.txt"
-path_rules_output = f"rule_mining/python/results/result.txt"
+path_rules_output = f"rule_mining/pyClause/results/anyburl_result.txt"
 
 options = Options()
 

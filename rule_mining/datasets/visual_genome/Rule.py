@@ -20,7 +20,7 @@ class Triplet:
     sub:int
     pred:str
     def print(self)->str:
-        return f"{self.obj} {self.pred} {self.sub}"
+        return f"{self.obj}\t{self.pred}\t{self.sub}"
 
 def load_json_files(path:Path,file_limit:int=-1,multiple_files_allowed:bool=True)->list[dict]:
     """Load JSON files from a single file or all JSON files in a folder."""
@@ -104,7 +104,7 @@ def replace_object_ids_with_name_in_file(rules: list[AnyBURLRule], object_id_dic
         rule_string = rule.get_rule_string()
         
         # Replace object IDs that appear as predicate arguments
-        arg_id_pattern:Pattern(str) = re.compile(r'(?<=\(|,)\s*(\d+)\s*(?=,|\))')
+        arg_id_pattern:Pattern[str] = re.compile(r'(?<=\(|,)\s*(\d+)\s*(?=,|\))')
         object_ids: list[str] = arg_id_pattern.findall(rule_string)
 
         replacement_found = False

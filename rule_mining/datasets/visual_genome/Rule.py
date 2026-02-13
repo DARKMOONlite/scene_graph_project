@@ -3,11 +3,12 @@ from pathlib import Path
 import json
 from tqdm import tqdm
 import re
+from typing import Pattern
 @dataclass
 class AnyBURLRule:
-    score1: int
-    score2: int
-    confidence: float
+    rule_applications: int 
+    correct_applications: int
+    confidence: float # Confidence = corrent/rule_applications
     head: str
     body: list[str]
     def get_rule_string(self) -> str:
@@ -130,7 +131,7 @@ def replace_object_ids_with_name_in_file(rules: list[AnyBURLRule], object_id_dic
         if "<=" in modified_rule:
             head, body_str = [part.strip() for part in modified_rule.split("<=", 1)]
             body = [b.strip() for b in body_str.split(",") if b.strip()]
-            modified_rules.append(AnyBURLRule(rule.score1, rule.score2, rule.confidence, head, body))
+            modified_rules.append(AnyBURLRule(rule.rule_applications, rule.correct_applications, rule.confidence, head, body))
         else:
             skipped += 1
 
@@ -140,16 +141,18 @@ def replace_object_ids_with_name_in_file(rules: list[AnyBURLRule], object_id_dic
 
 def save_rules_to_file(rules: list[AnyBURLRule], output_file: Path) -> None:
     result_lines = [
-        f"{rule.score1}\t{rule.score2}\t{rule.confidence}\t{rule.get_rule_string()}\n"
+        f"{rule.rule_applications}\t{rule.correct_applications}\t{rule.confidence}\t{rule.get_rule_string()}\n"
         for rule in rules
     ]
     with open(output_file, 'w') as f:
         f.writelines(result_lines)
     print(f"Output saved to {output_file}")
 
-def remove_low_confidence_rule(rules: list[AnyBURLRule], confidence_threshold: float = 0.5) -> list[AnyBURLRule]:
+def remove_low_confidence_rules(rules: list[AnyBURLRule], confidence_threshold: float = 0.5) -> list[AnyBURLRule]:
     return [rule for rule in rules if rule.confidence >= confidence_threshold]
 
+def remove_low_occurance_rules(rules: list[AnyBURLRule],min_successful_occurances:int):
+    return [rule for rule in rules if rule.correct_applications >= min_successful_occurances]
 
 def summarize_structure(value, depth: int = 2):
     """Summarises a dict/list structure to a certain level, including counts."""

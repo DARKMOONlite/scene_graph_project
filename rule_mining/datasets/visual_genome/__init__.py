@@ -6,7 +6,7 @@ from .Rule import (
     load_anyBURL_results,
     replace_object_ids_with_name_in_file,
     save_rules_to_file,
-    remove_low_confidence_rule,
+    remove_low_confidence_rules,
 )
 
 __all__ = [

@@ -5,14 +5,41 @@ from tqdm import tqdm
 import re
 from typing import Pattern
 @dataclass
-class AnyBURLRule:
+class FOLRule:
     rule_applications: int 
     correct_applications: int
     confidence: float # Confidence = corrent/rule_applications
     head: str
     body: list[str]
+
+    @classmethod
+    def from_line(cls, line: str) -> "FOLRule":
+        line = line.strip()
+        match = re.match(r"^\s*(\d+)\s+(\d+)\s+([0-9.]+)\s+(.*)$", line)
+        if not match:
+            raise ValueError(f"Malformed rule line: {line}")
+
+        rule_applications = int(match.group(1))
+        correct_applications = int(match.group(2))
+        confidence = float(match.group(3))
+
+        rule_string = match.group(4).strip()
+        if "<=" not in rule_string:
+            raise ValueError(f"Malformed rule (missing '<='): {rule_string}")
+
+        head, body_str = [part.strip() for part in rule_string.split("<=", 1)]
+        body = [b.strip() for b in body_str.split(",") if b.strip()]
+        return cls(rule_applications, correct_applications, confidence, head, body)
+
     def get_rule_string(self) -> str:
         return f"{self.head} <= {', '.join(self.body)}"
+    def print(self)->str:
+        return f"{self.rule_applications}\t{self.correct_applications}\t{self.confidence}\t{self.get_rule_string()}"
+    def print_scallop(self)->str:
+        return 
+# @dataclass ScallopRule:
+#     def __init__(self,fol:FOLRule):
+        
 
 @dataclass
 class Triplet:
@@ -21,6 +48,7 @@ class Triplet:
     pred:str
     def print(self)->str:
         return f"{self.obj}\t{self.pred}\t{self.sub}"
+
 
 def load_json_files(path:Path,file_limit:int=-1,multiple_files_allowed:bool=True)->list[dict]:
     """Load JSON files from a single file or all JSON files in a folder."""
@@ -56,11 +84,11 @@ def load_json_files(path:Path,file_limit:int=-1,multiple_files_allowed:bool=True
         raise ValueError(f"Path {path} does not exist")
 
 
-def load_anyBURL_results(input_file: Path) -> list[AnyBURLRule]:
+def load_anyBURL_results(input_file: Path) -> list[FOLRule]:
     with open(input_file, 'r') as f:
         lines = f.readlines()
 
-    results: list[AnyBURLRule] = []
+    results: list[FOLRule] = []
     skipped = 0
 
     for line in tqdm(lines, desc="Loading rules"):
@@ -69,35 +97,24 @@ def load_anyBURL_results(input_file: Path) -> list[AnyBURLRule]:
             skipped += 1
             continue
 
-        parts = line.split('\t')
-        if len(parts) < 4:
-            print(f"Warning: skipping malformed line (expected 4+ parts): {line}")
+        try:
+            results.append(FOLRule.from_line(line))
+        except ValueError as exc:
+            print(f"Warning: skipping malformed line: {exc}")
             skipped += 1
             continue
-
-        score1, score2, confidence = parts[0], parts[1], parts[2]
-        rule_string = '\t'.join(parts[3:])
-
-        if "<=" not in rule_string:
-            print(f"Warning: skipping malformed rule (missing '<='): {rule_string}")
-            skipped += 1
-            continue
-
-        head, body_str = [part.strip() for part in rule_string.split("<=", 1)]
-        body = [b.strip() for b in body_str.split(",") if b.strip()]
-        results.append(AnyBURLRule(int(score1), int(score2), float(confidence), head, body))
 
     if skipped:
         print(f"Skipped {skipped} lines while loading rules")
     return results
 
-def replace_object_ids_with_name_in_file(rules: list[AnyBURLRule], object_id_dict: dict) -> list[AnyBURLRule]:
+def replace_object_ids_with_name_in_file(rules: list[FOLRule], object_id_dict: dict) -> list[FOLRule]:
     """Replace object IDs with names in a rule file.
     Format: score1\tscore2\tconfidence\trule_string
     Rules contain object IDs like: predicate(X,obj_id)
     """
 
-    modified_rules: list[AnyBURLRule] = []
+    modified_rules: list[FOLRule] = []
     skipped = 0
     
     for rule in tqdm(rules, desc="Processing rules"):
@@ -131,7 +148,7 @@ def replace_object_ids_with_name_in_file(rules: list[AnyBURLRule], object_id_dic
         if "<=" in modified_rule:
             head, body_str = [part.strip() for part in modified_rule.split("<=", 1)]
             body = [b.strip() for b in body_str.split(",") if b.strip()]
-            modified_rules.append(AnyBURLRule(rule.rule_applications, rule.correct_applications, rule.confidence, head, body))
+            modified_rules.append(FOLRule(rule.rule_applications, rule.correct_applications, rule.confidence, head, body))
         else:
             skipped += 1
 
@@ -139,19 +156,19 @@ def replace_object_ids_with_name_in_file(rules: list[AnyBURLRule], object_id_dic
     return modified_rules
 
 
-def save_rules_to_file(rules: list[AnyBURLRule], output_file: Path) -> None:
+def save_rules_to_file(rules: list[FOLRule], output_file: Path) -> None:
     result_lines = [
-        f"{rule.rule_applications}\t{rule.correct_applications}\t{rule.confidence}\t{rule.get_rule_string()}\n"
+        f"{rule.print()}\n"
         for rule in rules
     ]
     with open(output_file, 'w') as f:
         f.writelines(result_lines)
     print(f"Output saved to {output_file}")
 
-def remove_low_confidence_rules(rules: list[AnyBURLRule], confidence_threshold: float = 0.5) -> list[AnyBURLRule]:
+def remove_low_confidence_rules(rules: list[FOLRule], confidence_threshold: float = 0.5) -> list[FOLRule]:
     return [rule for rule in rules if rule.confidence >= confidence_threshold]
 
-def remove_low_occurance_rules(rules: list[AnyBURLRule],min_successful_occurances:int):
+def remove_low_occurance_rules(rules: list[FOLRule],min_successful_occurances:int):
     return [rule for rule in rules if rule.correct_applications >= min_successful_occurances]
 
 def summarize_structure(value, depth: int = 2):

@@ -31,10 +31,10 @@ def main():
             for obj in json_data.get("objects", []):
                 object_id_dict[obj["object_id"]] = obj["names"][0]
         print(f"found {len(object_id_dict)} object instances")
-        rules: list[AnyBURLRule] = load_anyBURL_results(input_path)
-        modified_rules:list[AnyBURLRule] = replace_object_ids_with_name_in_file(rules=rules, object_id_dict=object_id_dict)
-        modified_rules: list[AnyBURLRule] = remove_low_confidence_rules(modified_rules,confidence_threshold=0.5)
-        modified_rules:list[AnyBURLRule] = remove_low_occurance_rules(rules=modified_rules,min_successful_occurances=4)
+        rules: list[FOLRule] = load_anyBURL_results(input_path)
+        modified_rules:list[FOLRule] = replace_object_ids_with_name_in_file(rules=rules, object_id_dict=object_id_dict)
+        modified_rules: list[FOLRule] = remove_low_confidence_rules(modified_rules,confidence_threshold=0.5)
+        modified_rules:list[FOLRule] = remove_low_occurance_rules(rules=modified_rules,min_successful_occurances=4)
         save_rules_to_file(modified_rules, output_path)
     except Exception as e:
         print(f"Exception: {e}")

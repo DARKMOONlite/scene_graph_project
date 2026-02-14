@@ -1,0 +1,41 @@
+# Meeting Notes:
+
+## 14/2/26
+### Things I've done:
+- Tested both anyBURL2023  and AMIE2020 on the visual genome database as well as a subset of the Freebase Dataset.
+	- AMIE seemed to do a better job at generating useful rules
+	- a lot of anyBURL rules were defining simple linquistical relationships like Next to is related to Near
+	- AMIE did better but I did let it run longer, as the anyBURL java script stops after 100s.
+	- A lot of overlap, if there are 100 object classes then it needed 100 lines for each basic common relationship
+		- 2 Kinds of rules being made really:
+			- Loop Resolution basically Bigger(A,B), Bigger (B,C) -> Bigger(A,C)
+			- Generalisation if all instances of musicians have made music then maybe all musicians make music. 
+- Tried testing AMIE and anyBURL on the CLEVR database, but they don't really work as they cannot do numerical comparisons, thus most of the benefits of this architecture would be mute
+	- ClEVR has position data and relates those to predicates like Near/Next-to Behind
+	- for now we can just hard code and abstract away to these predicates, but in the future it would probably be better for the system to be able to intake numerical numbers
+
+- There are major differences between scallop rules and FOL rules
+	- Numerical Comparisons
+		- Bigger(A,B), Bigger (B,C) -> Bigger(A,C) vs Height(A,h1) and Height(B,h2) and h1>h2 => Bigger(A,B)
+	- FOL can be collated into a graph
+	- you technically can translate FOL into Scallop, but you lose a lot of the benefits of scallop. 
+TODO:
+- Apply the concept behind AMIE and/or AnyBURL to scallop rules, find a way to incorporate numerical comparisons into the test scope
+- We need the system to focus on Generisations, to do that we either need to teach it how it can generalise, or find a big dataset of objects and how they're related:
+	- e.g. Present -> Box -> Container, Bird -> Animal	
+
+### Meeting Notes
+Domain Specific Logic is based on some small commonsense knowledge
+
+
+`"Grounding of Concepts"` : Standardise some basic concepts from which all the commonsense Knowledge is based off of.
+- relationship between the logical world and the geometrical world
+	- "A drone is “near” the landing point when it is within about 1–3 meters horizontally and 1–5 meters vertically of the touchdown location."
+	- grounding must be probabilistic, and cannot have hard cut offs. 
+"Knowledge of Concepts": Not grounded. 
+
+Focus on the taxonomy of rules based on how specific they are or where they come from. - Ivan
+#### TODO:
+1. Focus on creating the commonsense scallop rules
+2. create LLM based Human in the loop Domain Specific scallop rules
+3. create Grounding of Concepts

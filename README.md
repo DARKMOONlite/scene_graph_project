@@ -37,3 +37,12 @@ pip install -e .
 
 ## Interesting Links
 [**Scallop Interpreting over Graphs**](https://www.scallop-lang.org/log22/slides/log-2022-tutorial-scallop-part.pdf)
+
+
+## The Idea
+1. Copy [REGNUM](https://github.com/armitakhn/REGNUM) as a baseline
+   a. test on specifically positional datasets where we take basic predicates like `near`, `far`, `in_contact` etc and convert them into more complex predicates like `wearing`, `holding`,`riding`,`throwing` etc. Because of this we actually can delimit our range for predicates to a positional subset, but how can we do that?  
+3. see what needs to be changed or updated
+4. make modifications like
+  a. soft bounds through distributions
+  b.   

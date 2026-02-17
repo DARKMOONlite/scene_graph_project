@@ -1,3 +1,4 @@
+
 from dataclasses import dataclass
 from pathlib import Path
 import json
@@ -36,7 +37,16 @@ class FOLRule:
     def print(self)->str:
         return f"{self.rule_applications}\t{self.correct_applications}\t{self.confidence}\t{self.get_rule_string()}"
     def print_scallop(self)->str:
-        return 
+        head_normalized = self.head.replace(" ", "_")
+        if self.body:
+            body_normalized = []
+            for i, item in enumerate(self.body):
+                normalized = item.replace(" ", "_")
+                if i % 2 == 1:
+                    normalized = normalized.replace(",", "and")
+                body_normalized.append(normalized)
+            return f"rel {head_normalized} = {','.join(body_normalized)}"
+        return f"rel {head_normalized}"
 # @dataclass ScallopRule:
 #     def __init__(self,fol:FOLRule):
         

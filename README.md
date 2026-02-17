@@ -46,3 +46,19 @@ pip install -e .
 4. make modifications like
   a. soft bounds through distributions
   b.   
+
+### Diagram
+```mermaid
+    graph TD;
+    A[Image]-->B;
+    B{Semantic Segmentation}-->C;
+    C[Objects and Positions]-->D;
+    D{Grounding of Concepts}-->E;
+    E[Proto-Scene Graph]-->F;
+    F{Commonsense Scallop Rules} --> G;
+    G[Enhansed Scene Graph]-->H;
+    H{Domain Specific Scallop Rules}-->I;
+    I[Domain-Grounded Scene Graph]
+
+
+```

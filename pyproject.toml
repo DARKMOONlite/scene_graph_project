@@ -10,6 +10,8 @@ dependencies = [
 	"visual_genome @ git+https://github.com/ranjaykrishna/visual_genome_python_driver.git",
 	"networkx",
 	"tqdm",
+	"maturin",
+	"scallopy @ git+https://github.com/scallop-lang/scallop.git#egg=scallopy&subdirectory=etc/scallopy",
 ]
 
 [build-system]

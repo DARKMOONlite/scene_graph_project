@@ -1,3 +1,6 @@
+"""
+Modify Rules based on either low occurance or low confidence
+"""
 from typing import Pattern
 import json
 import argparse
@@ -5,7 +8,7 @@ from pathlib import Path
 from tqdm import tqdm
 import re
 from dataclasses import dataclass
-from rule_mining.datasets.visual_genome.Rule import *
+from rule_mining.datasets.visual_genome.Rules import *
 
 def main():
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter,

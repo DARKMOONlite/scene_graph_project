@@ -1,0 +1,13 @@
+// Topological
+rel Disjoint(A,B)
+rel Touching(A,B)
+rel Inside(A,B)
+//Positional
+rel LeftOf(A,B)
+rel RightOf(A,B)
+rel Above(A,B)
+rel Below(A,B)
+// Proximal
+rel Near(A,B)
+//Size Relation
+rel Smaller(A,B)

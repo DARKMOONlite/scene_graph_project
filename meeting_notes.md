@@ -39,3 +39,14 @@ Focus on the taxonomy of rules based on how specific they are or where they come
 1. Focus on creating the commonsense scallop rules
 2. create LLM based Human in the loop Domain Specific scallop rules
 3. create Grounding of Concepts
+
+## 28/2/26
+### Things I've done
+- Created a basic predicate grounding system to take images and create simple grounded predicates based on that. e.g. `Near to`, `Beneath`, `inside` etc.
+  - Currently this is not the best solution as its hard coded based on the centroids and edges of the generated Segment Anything masks.
+  <img width="1232" height="905" alt="Screenshot from 2026-02-23 13-39-40" src="https://github.com/user-attachments/assets/8339c9ae-1992-4eca-8eaf-e610127d59af" />
+- Predicate Enrichment:
+	**Predicate enrichment** is the act of taking simple incomplex predicates and using additional context to convert them into more interesting predicates. The goal should be to take our concept-grounded predicates which are defined by experts in the field, and convert them using aditional information from the scene into more complex and useful predicates. 
+  - **Predicate Complexity**: we want to create rules that are more complex than grounded rules, each predicate should be given a complexity value based on either how difficult it is to discern or how much and what type of contextual information is needed to create it
+  - **Generalisability**: we want to create rules that are abstract enough and cover as much of the search space as possible, we should focus at the start on creating highly generalised rules and then slowly increase the specificity of the generated rules. 
+  

@@ -7,3 +7,5 @@ data
 .venv/
 *.egg-info
 *.pyc
+*.db
+*.csv

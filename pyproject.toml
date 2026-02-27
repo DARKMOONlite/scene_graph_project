@@ -12,6 +12,7 @@ dependencies = [
 	"tqdm",
 	"maturin",
 	"scallopy @ git+https://github.com/scallop-lang/scallop.git#egg=scallopy&subdirectory=etc/scallopy",
+	"multiset",
 ]
 
 [tool.setuptools.packages.find]

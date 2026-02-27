@@ -7,15 +7,21 @@ import argparse
 from pathlib import Path
 import pprint
 from tqdm import tqdm
-from rule_mining.datasets.visual_genome.Rule import *
+from rule_mining.datasets.visual_genome.Rules import *
 
 
 
-def object_predicate_to_basic_triplets(predicates:list[dict],objects:list[dict])->list[tuple]:
+def object_predicate_to_basic_triplets(predicates:list[dict], objects:list[dict], source:str|None=None)->list[tuple]:
     """strips all non-relevant data out and just stores each relationship as a triplet.
     
+    Args:
+        predicates: list of relationship dicts from the scene graph
+        objects: list of object dicts from the scene graph
+        source: optional identifier for the source scene graph file
+
     Returns:
-        List of tuples: (subject_id, predicate, object_id)
+        List of tuples: (subject_id, predicate, object_id) or
+                        (subject_id, predicate, object_id, source) if source is provided
     """
     triples = []
     for pred in predicates:
@@ -23,7 +29,10 @@ def object_predicate_to_basic_triplets(predicates:list[dict],objects:list[dict])
         predicate = pred.get("predicate")
         object_id = pred.get("object_id")
         if subject_id is not None and predicate and object_id is not None:
-            triples.append((subject_id, predicate, object_id))
+            if source is not None:
+                triples.append((subject_id, predicate, object_id, source))
+            else:
+                triples.append((subject_id, predicate, object_id))
     return triples
 
 def replace_object_ids_with_name(objects:list[dict],triplets:list[tuple]):
@@ -41,8 +50,9 @@ def replace_object_ids_with_name(objects:list[dict],triplets:list[tuple]):
             subject = subject[0] if subject else ""
         if isinstance(obj, list):
             obj = obj[0] if obj else ""
-        relationship:tuple = (subject, relationship[1], obj)
-        result.append(relationship)
+        # Preserve any extra fields (e.g. source) beyond the base 3
+        extra = relationship[3:]
+        result.append((subject, relationship[1], obj) + extra)
         # print(result[-1])
     return result
         
@@ -57,7 +67,7 @@ def save_triplets(triplets_list:list[list[tuple]],file:Path):
         for triplet in triplets:
             for value in triplet:
                 value = str(value)
-                f.write(value.replace(" ","_")+' ')
+                f.write(value.replace(" ","_")+'\t')
             f.write("\n")
     print(f"file saved at {file}")
 def main():
@@ -75,9 +85,9 @@ def main():
         print(f"Successfully loaded {len(data)} JSON file(s)")
         results = []
         for json_data in tqdm(data): #! Not the best method but it works for now
-            triples:list[tuple] = object_predicate_to_basic_triplets(predicates=json_data["relationships"],objects=json_data["objects"])
-
-            results.append(triples)
+            triples:list[tuple] = object_predicate_to_basic_triplets(predicates=json_data["relationships"],objects=json_data["objects"],source=json_data.get("image_id"))
+            triples_with_names = replace_object_ids_with_name(objects=json_data["objects"],triplets=triples)
+            results.append(triples_with_names)
         if args.output is not None:
             save_triplets(results,Path(args.output))
         else:

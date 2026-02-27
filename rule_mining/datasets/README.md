@@ -10,10 +10,11 @@ instead these FOL systems can only solve holes in existing data for example
 ```prolog
 Taller(Alice, Bob) & Taller(Bob, Charlie) => Taller(Alice, Charlie)
 ```
-### Abstraction Alternative
+### Abstraction Alternative (Grounding of Concepts)
 An alternative is instead of passing in positional/numeric data into scallop we instead abstract away the numbers to basic predicates. 
 ```prolog
 distance < 1.0 -> Close(X,Y)
 1.0 - 3.0 -> Near(X,Y)
 >3.0 -> Far(X,Y)
 ```
+This is what we're going with for the first component of the project. 

@@ -1,6 +1,6 @@
 """Utilities for Visual Genome dataset processing."""
 
-from .Rule import (
+from .Rules import (
     FOLRule,
     load_json_files,
     load_anyBURL_results,

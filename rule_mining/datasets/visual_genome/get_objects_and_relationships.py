@@ -20,7 +20,7 @@ from collections import Counter
 from pathlib import Path
 
 
-def process_folder(json_dir: Path, lowercase: bool):
+def process_folder(json_dir: Path, lowercase: bool)->tuple[Counter, Counter]:
     object_counter: Counter = Counter()
     rel_counter: Counter = Counter()
 
@@ -58,6 +58,7 @@ def format_entries(counter: Counter, min_counts: int) -> list[str]:
         if(count<min_counts):
             return output
         output.append(f"{item}\t{count}")
+    return output
 
 
 

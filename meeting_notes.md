@@ -49,4 +49,36 @@ Focus on the taxonomy of rules based on how specific they are or where they come
 	**Predicate enrichment** is the act of taking simple incomplex predicates and using additional context to convert them into more interesting predicates. The goal should be to take our concept-grounded predicates which are defined by experts in the field, and convert them using aditional information from the scene into more complex and useful predicates. 
   - **Predicate Complexity**: we want to create rules that are more complex than grounded rules, each predicate should be given a complexity value based on either how difficult it is to discern or how much and what type of contextual information is needed to create it
   - **Generalisability**: we want to create rules that are abstract enough and cover as much of the search space as possible, we should focus at the start on creating highly generalised rules and then slowly increase the specificity of the generated rules. 
+
+### Meetings Notes
+Contextual awareness being added to promote low level predicates into high level predicates.
+Low (Abstract) High Level (Task/Scene Specific)
+- we need aditional information
+We need to get this information.
+- How can we get this additional information or Entropy.
+
+- Write down what roadblocks ive met and how ive moved around or overcome them.
+- Predicates are more textual and rich than just the word itself, we need to capture these ideas.
+- What levels NEED to be symbolic
+	- Can we obtain the rules using 
+
+
+We need to define the meaning of predicates, then we can define the rules
+- basic rules can be easily defined but complex prediates
+- `Using the Computer` is a composite rule with lots of conditions, 
+- Using Neural networks to learn rules
+- 
+Domain Context is always needed.
+- Different Learning Strategies
+- Top down AND bottom up
+  - Bottum up ones can be symbolic,
+- PredicateConcept Allignment
+  - `Looking at screen`, `Touching Keyboard`, `touching mouse` all conceptually alligned, then combined symbolically to create `Person using Computer(x,y)`
+    - with this someone would be able to look at `Person using a computer` and see why the system thought that, if the system is wrong in some of the conceptually alligned predicates: `looking at screen` or `touching mouse` the human should be able to look at 
+-  Sandwich method Symbolic -> Neural -> Symbolic
+-   Neural Tightening / Neural Loosening, where is the Neural Crux
+
+```
+ Using_computer(x,y)
+```
   

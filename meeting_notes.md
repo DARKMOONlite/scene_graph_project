@@ -81,4 +81,7 @@ Domain Context is always needed.
 ```
  Using_computer(x,y)
 ```
-  
+## 15/3/26
+### What I've Done
+Outlined a new plan forward that uses a combination of neural networks to do a lot of the brunt work, but still maintains some degree of interpretability of the results by having a symbolic layer that converts high-level observations into justified predicates and actions. 
+- [Overleaf overview document](https://www.overleaf.com/read/nfxntssffzjd#3a630c)

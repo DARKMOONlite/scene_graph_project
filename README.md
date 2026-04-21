@@ -1,6 +1,11 @@
 # scene_graph_project
 A project for creating useful spatial scene graphs from images. 
 
+## TODO 
+- Ego Centric Scene graph (change the perspective of the scene graph to a specific point within the scene)
+   - [VLM-Grounder](https://github.com/InternRobotics/VLM-Grounder)
+   - [VIZOR](https://vivekmadhavaram.github.io/vizor/)
+   - [Vil3DRel](https://arxiv.org/pdf/2211.09646)
 
 
 
@@ -10,6 +15,9 @@ A project for creating useful spatial scene graphs from images.
 - [**ConceptNET**](https://conceptnet.io/): semantic network, designed to help computers understand the meanings of words that people use.
 - [**Atomic20/20**](https://github.com/allenai/comet-atomic-2020):
 - [**CLEVR**](https://cs.stanford.edu/people/jcjohns/clevr/): a diagnostic dataset that tests a range of visual reasoning abilities
+- [Ego4D](https://ego4d-data.org/)
+### Car Centric Datasets:
+- [BDD-X](https://github.com/JinkyuKimUCB/BDD-X-dataset)
 ## Rule Mining Links
 
 - [**SAFRAN**](https://github.com/OpenBioLink/SAFRAN): Scalable and fast non-redundant rule application

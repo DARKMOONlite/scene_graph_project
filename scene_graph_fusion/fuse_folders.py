@@ -1,6 +1,7 @@
 
 from argparse import ArgumentParser
 from pipeline import Standardiser, SceneGraphFusion, FusionConfig, save_scene_graph_json,load_scene_graph_json
+from pipeline.wordnet import install_wordnet
 from tqdm import tqdm
 import os
 from pathlib import Path
@@ -68,6 +69,9 @@ def main(args):
 
 
 if __name__ == "__main__":
+    
+    install_wordnet()
+    
     parser = ArgumentParser(description="Run the scene graph fusion pipeline on example data.")
     parser.add_argument("folder_a", type=str, default="/mnt/sda1/Datasets/hl_dataset/scene_graphs/react++",
                         help="Path to JSON file with detections from model A.")

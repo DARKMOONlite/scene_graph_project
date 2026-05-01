@@ -1,17 +1,34 @@
 from __future__ import annotations
+import os
+WORDNET_DIR = "/mnt/sda1/Datasets/NLTK/wordnet-2022"
+WORDNET_2022_DIR = "/mnt/sda1/Datasets/NLTK/wordnet-2022/corpora/wordnet2022"
+WORDNET_CORRECT_DIR = "/mnt/sda1/Datasets/NLTK/wordnet-2022/corpora/wordnet"
 import nltk
+nltk.data.path.append(WORDNET_DIR)
 from nltk.corpus import wordnet2022 as wn
-
-nltk.data.path.append('/mnt/sda1/Datasets/NLTK/wordnet-2022')
 from nltk.util import acyclic_depth_first as acyclic_search
 import json
 from collections import deque
 from nltk.corpus.reader import Synset
 from pprint import pprint
+from pathlib import Path
+import shutil
 KEY_NOUNS = {"plate","tableware","object","container","human"}
 
-
-
+def install_wordnet():
+    """Utility function to download and install the WordNet 2022 corpus."""
+    import nltk
+    if WORDNET_DIR not in nltk.data.path:
+        nltk.data.path.append(WORDNET_DIR)
+    if not Path(WORDNET_DIR).is_dir():
+        os.makedirs(WORDNET_DIR, exist_ok=True)
+        
+    if not Path(WORDNET_CORRECT_DIR).is_dir():
+        result = nltk.download('wordnet2022', download_dir=WORDNET_DIR)
+    print(f"WordNet 2022 installed in {WORDNET_DIR}: {result}")
+    shutil.move(WORDNET_2022_DIR, WORDNET_CORRECT_DIR) # move wordnet2022 to wordnet so that it can be loaded by nltk.corpus.wordnet
+    
+    
 def compress_search_result(result) -> list[str]:
     """Flatten the nested acyclic_depth_first result into a single ordered list of lemma names."""
     if isinstance(result, Synset):

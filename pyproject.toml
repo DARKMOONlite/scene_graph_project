@@ -13,7 +13,13 @@ dependencies = [
 	"maturin",
 	"scallopy @ git+https://github.com/scallop-lang/scallop.git#egg=scallopy&subdirectory=etc/scallopy",
 	"multiset",
+	'spacy',
+	'nltk',
+
 ]
+
+[project.scripts]
+
 
 [tool.setuptools.packages.find]
 include = ["rule_mining*"]

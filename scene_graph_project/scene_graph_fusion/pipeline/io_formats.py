@@ -18,7 +18,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pipeline.models import BoundingBox, Relationship, SceneGraph, SceneObject
+from scene_graph_project.scene_graph_fusion.pipeline.models import BoundingBox, Relationship, SceneGraph, SceneObject
 
 
 # ---------------------------------------------------------------------------

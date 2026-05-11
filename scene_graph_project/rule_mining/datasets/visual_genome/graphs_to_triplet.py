@@ -7,7 +7,7 @@ import argparse
 from pathlib import Path
 import pprint
 from tqdm import tqdm
-from rule_mining.datasets.visual_genome.Rules import *
+from scene_graph_project.rule_mining.datasets.visual_genome.Rules import *
 
 
 

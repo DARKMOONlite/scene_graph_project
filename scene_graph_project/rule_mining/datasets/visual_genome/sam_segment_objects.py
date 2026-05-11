@@ -19,7 +19,7 @@ from tqdm import tqdm
 import os
 import numpy as np
 import matplotlib.pyplot as plt
-from simple_basic_predicates import get_centroid, BasicPredicate
+from scene_graph_project.rule_mining.datasets.visual_genome.simple_basic_predicates import get_centroid, BasicPredicate
 import networkx as nx
 SCORE_THRESHOLD = 0.5
 

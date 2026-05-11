@@ -4,10 +4,10 @@ Provides data models, language standardisation, and spatial+semantic
 fusion for merging scene graphs from multiple sources.
 """
 
-from pipeline.models import BoundingBox, SceneGraph, SceneObject, Relationship
-from pipeline.standardiser import Standardiser
-from pipeline.fusion import SceneGraphFusion, FusionConfig
-from pipeline.io_formats import (
+from scene_graph_project.scene_graph_fusion.pipeline.models import BoundingBox, SceneGraph, SceneObject, Relationship,SceneGraphJsonEncoder
+from scene_graph_project.scene_graph_fusion.pipeline.standardiser import Standardiser
+from scene_graph_project.scene_graph_fusion.pipeline.fusion import SceneGraphFusion, FusionConfig,ObjectMatch
+from scene_graph_project.scene_graph_fusion.pipeline.io_formats import (
     load_scene_graph_json,
     load_scene_graphs_json,
     load_visual_genome,
@@ -26,6 +26,7 @@ __all__ = [
     "Standardiser",
     # fusion
     "SceneGraphFusion",
+    "ObjectMatch",
     "FusionConfig",
     # I/O
     "load_scene_graph_json",
@@ -34,4 +35,5 @@ __all__ = [
     "load_coco_detections",
     "save_scene_graph_json",
     "scene_graph_to_dict",
+    "SceneGraphJsonEncoder",
 ]

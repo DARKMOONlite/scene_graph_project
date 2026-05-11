@@ -19,10 +19,8 @@ dependencies = [
 ]
 
 [project.scripts]
-
-
 [tool.setuptools.packages.find]
-include = ["rule_mining*"]
+where = ["."]   # looks for packages in the repo root
 
 [build-system]
 requires = ["setuptools>=61.0"]

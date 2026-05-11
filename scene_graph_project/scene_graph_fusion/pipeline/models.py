@@ -8,10 +8,20 @@ standardisation and merging.
 from __future__ import annotations
 
 from random import random
+import json
 import uuid
 from dataclasses import dataclass, field
 import networkx as nx
 import matplotlib.pyplot as plt
+
+
+class SceneGraphJsonEncoder(json.JSONEncoder):
+    """JSON encoder that serialises UUID values as strings."""
+
+    def default(self, obj):
+        if isinstance(obj, uuid.UUID):
+            return str(obj)
+        return super().default(obj)
 @dataclass
 class BoundingBox:
     """Axis-aligned bounding box in pixel coordinates.
@@ -100,7 +110,7 @@ class SceneObject:
     confidence: float = 1.0
     source: str = ""
     canonical_label: str = ""
-    uid: int = field(default_factory=lambda: uuid.uuid4())
+    uid: uuid.UUID = field(default_factory=uuid.uuid4)
 
     def __post_init__(self):
         self.label = self.label.strip().lower()
@@ -121,9 +131,9 @@ class Relationship:
         source: Name of the source that produced this relationship.
     """
 
-    subject_uid: int
+    subject_uid: uuid.UUID
     predicate: str
-    object_uid: int
+    object_uid: uuid.UUID
     confidence: float = 1.0
     source: str = ""
     canonical_predicate: str = ""

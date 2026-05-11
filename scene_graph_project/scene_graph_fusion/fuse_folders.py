@@ -1,7 +1,7 @@
 
 from argparse import ArgumentParser
-from pipeline import Standardiser, SceneGraphFusion, FusionConfig, save_scene_graph_json,load_scene_graph_json
-from pipeline.wordnet import install_wordnet
+from scene_graph_project.scene_graph_fusion.pipeline import Standardiser, SceneGraphFusion, FusionConfig, save_scene_graph_json,load_scene_graph_json
+from scene_graph_project.scene_graph_fusion.pipeline.wordnet import install_wordnet
 from tqdm import tqdm
 import os
 from pathlib import Path

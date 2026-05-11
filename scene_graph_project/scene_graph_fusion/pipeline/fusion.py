@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from pipeline.models import BoundingBox, Relationship, SceneGraph, SceneObject
-from pipeline.wordnet import wup_confidence
+from scene_graph_project.scene_graph_fusion.pipeline.models import BoundingBox, Relationship, SceneGraph, SceneObject
+from scene_graph_project.scene_graph_fusion.pipeline.wordnet import wup_confidence
 
 
 # ---------------------------------------------------------------------------
@@ -34,7 +34,7 @@ class FusionConfig:
 
     semantic_threshold: float = 0.6
     """Minimum Wu-Palmer similarity score (on canonical labels) to accept a
-    semantic match between two objects."""
+    semantic match between two objects. if set to 0.0, any non-zero similarity is accepted."""
 
     require_spatial_overlap: bool = True
     """When ``True``, objects from different sources can only be matched if
@@ -43,11 +43,16 @@ class FusionConfig:
 
     prefer_higher_confidence: bool = True
     """When merging, prefer the label with the higher confidence score."""
+    
+    label_set: set[str] | None = None
+    """Optional set of allowed canonical labels. If provded, the merged scene_graph will only contain objects whose canonical label is in this set. This can be used to enforce a consistent label space across sources."""
+    
 
 
 # ---------------------------------------------------------------------------
 # Match result
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class ObjectMatch:
@@ -57,6 +62,17 @@ class ObjectMatch:
     obj_b: SceneObject
     iou: float
     semantic_score: float
+
+    def track(self,other:ObjectMatch) -> bool:
+        """True if this match tracks the same base object as *other*."""
+        result:bool = \
+        self.obj_a.uid == other.obj_a.uid or \
+        self.obj_b.uid == other.obj_b.uid  
+        
+        return result
+
+
+
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +95,20 @@ class SceneGraphFusion:
     # Public API
     # ------------------------------------------------------------------
 
+    def match(self, graphs: list[SceneGraph]) -> list[ObjectMatch]:
+        """Find matches between objects in multiple scene graphs."""
+        if not graphs:
+            return []
+        if len(graphs) == 1:
+            return []
+
+        all_matches: list[ObjectMatch] = []
+        for i in range(len(graphs) - 1):
+            for j in range(i + 1, len(graphs)):
+                matches, _ = self._match_objects(graphs[i].objects, graphs[j].objects)
+                all_matches.extend(matches)
+        return all_matches
+
     def fuse(self, graphs: list[SceneGraph]) -> SceneGraph:
         """Merge a list of scene graphs and return the unified result.
 
@@ -95,12 +125,19 @@ class SceneGraphFusion:
         merged = self._copy_graph(graphs[0])
         for graph in graphs[1:]:
             merged = self._merge_pair(merged, graph)
+            
+        if self.config.label_set is not None: # filter out objects whose canonical label is not in the allowed set
+            merged.objects = [o for o in merged.objects if o.canonical_label in self.config.label_set]
+            # also filter relationships to only include those whose subject and object are still present
+            valid_uids = set(o.uid for o in merged.objects)
+            merged.relationships = [r for r in merged.relationships if r.subject_uid in valid_uids and r.object_uid in valid_uids]    
+        
         return merged
 
     # ------------------------------------------------------------------
     # Pairwise merge
     # ------------------------------------------------------------------
-
+    
     def _merge_pair(self, base: SceneGraph, incoming: SceneGraph) -> SceneGraph:
         """Merge *incoming* into *base*, returning the updated graph."""
         matches, unmatched = self._match_objects(base.objects, incoming.objects)

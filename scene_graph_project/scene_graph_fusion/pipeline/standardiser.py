@@ -8,12 +8,12 @@ consistent canonical vocabulary before fusion.
 from __future__ import annotations
 
 import spacy
-from pipeline.wordnet import (
+from scene_graph_project.scene_graph_fusion.pipeline.wordnet import (
     get_synsets_for_noun,
     build_hierarchy,
     wup_confidence,
 )
-from pipeline.models import SceneGraph
+from scene_graph_project.scene_graph_fusion.pipeline.models import SceneGraph
 
 # ---------------------------------------------------------------------------
 # Built-in synonym map – covers the most common cross-detector divergences.

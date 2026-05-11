@@ -3,7 +3,7 @@
 
 
 from argparse import ArgumentParser
-from pipeline import Standardiser, SceneGraphFusion, FusionConfig, save_scene_graph_json,load_scene_graph_json
+from scene_graph_project.scene_graph_fusion.pipeline import Standardiser, SceneGraphFusion, FusionConfig, save_scene_graph_json,load_scene_graph_json
 def main(args):
     sg_a = load_scene_graph_json(args.model_a, source="model_a")
     sg_b = load_scene_graph_json(args.model_b, source="model_b")

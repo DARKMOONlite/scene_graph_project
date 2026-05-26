@@ -105,6 +105,7 @@ class SceneObject:
     """
 
     label: str
+    original_identifier: int = -1
     bbox: BoundingBox | None = None
     attributes: list[str] = field(default_factory=list)
     confidence: float = 1.0

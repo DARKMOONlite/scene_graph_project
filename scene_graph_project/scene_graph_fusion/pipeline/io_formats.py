@@ -178,7 +178,7 @@ def _dict_to_scene_graph(data: dict, source: str = "") -> SceneGraph:
     iterator = 0
     for obj_data in data.get("objects", []):
         oid = iterator
-        iterator += 1
+        
         label = obj_data.get("label", obj_data.get("name", ""))
         raw_bbox = obj_data.get("bbox")
         bbox = BoundingBox(*raw_bbox) if raw_bbox and len(raw_bbox) == 4 else None
@@ -187,11 +187,13 @@ def _dict_to_scene_graph(data: dict, source: str = "") -> SceneGraph:
 
         so = SceneObject(
             label=label,
+            original_identifier=iterator,
             bbox=bbox,
             attributes=attrs,
             confidence=confidence,
             source=source,
         )
+        iterator += 1
         id_to_uid[oid] = so.uid
         graph.add_object(so)
 
@@ -266,7 +268,7 @@ def save_scene_graph_json(graph: SceneGraph, path: str | Path) -> None:
 # Internal utilities
 # ---------------------------------------------------------------------------
 
-def _read_json(path: str | Path) -> dict | list:
+def _read_json(path: str | Path) -> dict:
     with open(path, "r") as f:
         return json.load(f)
 

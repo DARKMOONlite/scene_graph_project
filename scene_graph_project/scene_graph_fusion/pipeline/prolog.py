@@ -180,7 +180,7 @@ class PopperDataset:
         self.scenarios: list[PopperScenario] = []
         self.folder_path = folder_path
 
-    def load(self, folder_path: str | None = None) -> None:
+    def load(self, folder_path: str | None = None) -> list[PopperScenario]:
         """Load all experiment sub-directories as PopperScenario instances."""
         if folder_path is None:
             folder_path = self.folder_path
@@ -242,8 +242,8 @@ def create_popper_file(facts:list[ProLogFact], output_file_path:str):
             f.write(str(fact) + "\n")
 
 
-def load_popper_facts(file_path: str) -> list[ProLogFact]:
-    """Load Popper facts from a .pl file and return them as a list of ProLogFact or ProLogExample instances."""
+def load_popper_facts(file_path: str) -> list[ProLogFact|ProLogExample|ProLogBiasFact]:
+    """Load Popper facts from a .pl file and return them as a list of ProLogFact, ProLogExample, or ProLogBiasFact instances."""
     facts = []
     with open(file_path, 'r') as file:
         for line in file:
@@ -273,7 +273,7 @@ def load_popper_file_dataset(folder_path: str) -> list[PopperScenario]:
     return ds.scenarios
 
 
-def _load_if_exists(path: str) -> list[ProLogFact]:
+def _load_if_exists(path: str) -> list[ProLogFact|ProLogExample|ProLogBiasFact] | list:
     """Load Popper facts from *path* if it exists, otherwise return an empty list."""
     if os.path.exists(path):
         return load_popper_facts(path)
@@ -337,13 +337,13 @@ def get_id_from_file_name(file_name:str)->str:
 
 
 
-def load_coco_jsonl(coco_jsonl_path:str)->list[dict[str, dict[str]]]:
+def load_coco_jsonl(coco_jsonl_path:str)->list[dict[str, dict[str, list[str]]]]:
     """Parse the COCO JSONL annotation file and collect matching verbs and nouns per image."""
     with jsonlines.open(coco_jsonl_path) as reader:
         result =  list()
         for image_file in tqdm(reader, desc="Processing COCO annotations"):
             values = {"file_name": image_file["file_name"], "captions": dict() }
-            captions:JsonValue = image_file["captions"]
+            captions:dict = image_file["captions"]
             
             values["captions"]["scene"] = captions["scene"]
             values["captions"]["action"] = captions["action"]

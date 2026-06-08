@@ -25,8 +25,8 @@ def install_wordnet():
         
     if not Path(WORDNET_CORRECT_DIR).is_dir():
         result = nltk.download('wordnet2022', download_dir=WORDNET_DIR)
-    print(f"WordNet 2022 installed in {WORDNET_DIR}: {result}")
-    shutil.move(WORDNET_2022_DIR, WORDNET_CORRECT_DIR) # move wordnet2022 to wordnet so that it can be loaded by nltk.corpus.wordnet
+        print(f"WordNet 2022 installed in {WORDNET_DIR}: {result}")
+        shutil.move(WORDNET_2022_DIR, WORDNET_CORRECT_DIR) # move wordnet2022 to wordnet so that it can be loaded by nltk.corpus.wordnet
     
     
 def compress_search_result(result) -> list[str]:

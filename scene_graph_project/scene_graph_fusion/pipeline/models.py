@@ -7,12 +7,15 @@ standardisation and merging.
 
 from __future__ import annotations
 
+from enum import Enum
 from random import random
 import json
 import uuid
 from dataclasses import dataclass, field
+from matplotlib.axes import Axes
 import networkx as nx
 import matplotlib.pyplot as plt
+from numpy import shape
 
 
 class SceneGraphJsonEncoder(json.JSONEncoder):
@@ -88,6 +91,8 @@ class BoundingBox:
         return self.intersection_area(other) / other.area >= threshold
 
 
+
+
 @dataclass
 class SceneObject:
     """A detected object within a scene graph.
@@ -145,6 +150,12 @@ class Relationship:
             self.canonical_predicate = self.predicate
 
 
+class SceneGraphShape(Enum):
+    SPRING = nx.spring_layout
+    SPIRAL = nx.spiral_layout
+    RANDOM = nx.random_layout
+    MULTIPARTITE = nx.multipartite_layout
+
 @dataclass
 class SceneGraph:
     """A full scene graph for a single image from one source.
@@ -190,7 +201,7 @@ class SceneGraph:
         self.relationships.append(rel)
         return rel
 
-    def summary(self) -> dict:
+    def to_dict(self) -> dict:
         """Return a compact summary of the graph contents."""
         return {
             "image_id": self.image_id,
@@ -200,21 +211,67 @@ class SceneGraph:
             "labels": sorted({o.canonical_label for o in self.objects}),
             "predicates": sorted({r.canonical_predicate for r in self.relationships}),
         }
-    def visualise(self):
+    def visualise(self,
+            node_labels:bool=True,
+            edge_labels:bool=True,
+            shape:SceneGraphShape=SceneGraphShape.SPRING,
+            subsets:dict[str,int]|None=None, # necessary for multipartite layout, ignored otherwise
+            axis:Axes|None=None,
+            show_plot:bool=True):
         G = nx.Graph()
         for obj in self.objects:
             G.add_node(obj.uid,label=obj.canonical_label)
         for rel in self.relationships:
-            G.add_edge(rel.subject_uid,rel.object_uid,label=rel.predicate)
-        self._draw_network(network=G)
-
-    def _draw_network(self,network:nx.Graph):
+            G.add_edge(rel.subject_uid,rel.object_uid,label=rel.canonical_predicate)
+        
+        self._draw_network(network=G,
+                    and_edge_labels=edge_labels,
+                    and_node_labels=node_labels,
+                    shape=shape,
+                    subsets=subsets,
+                    axis=axis,
+                    show_plot=show_plot
+                    )
+    
+    def _draw_network(self,
+            network:nx.Graph,
+            and_node_labels:bool=True,
+            and_edge_labels:bool=True,
+            shape:SceneGraphShape=SceneGraphShape.SPRING,
+            subsets:dict[str,int]|None=None,
+            axis:Axes|None=None,
+            show_plot:bool=True):
         
         colours:list[tuple] = []
         for _ in range(len(network.nodes)):
             colours.append((random()*0.8,random(),random()))
+        if shape == SceneGraphShape.RANDOM or shape == SceneGraphShape.SPRING or shape == SceneGraphShape.SPIRAL:
+            layout = shape(G=network,seed=0)
+        if shape == SceneGraphShape.MULTIPARTITE:
+            layout = shape(network,subset_key=subsets)
+        nx.draw(G=network,pos=layout,ax=axis,node_color=colours)
+        if and_node_labels:
+            nx.draw_networkx_labels(G=network,pos=layout,labels=nx.get_node_attributes(network,'label'),ax=axis)
+        if and_edge_labels:
+            nx.draw_networkx_edge_labels(G=network,pos=layout,edge_labels=nx.get_edge_attributes(network,'label'),ax=axis)
+        if show_plot:
+            plt.show()
             
-        nx.draw(G=network,pos=nx.spring_layout(G=network,seed=0),node_color=colours)
-        nx.draw_networkx_labels(G=network,pos=nx.spring_layout(G=network,seed=0),labels=nx.get_node_attributes(network,'label'))
-        plt.show()
+            
+    @classmethod
+    def merge(cls, graphs: list[SceneGraph]) -> SceneGraph:
+        """Merge multiple scene graphs into one, combining objects and relationships."""
+        if not graphs:
+            raise ValueError("No graphs to merge")
+        merged = cls(image_id=graphs[0].image_id, source="merged")
+        object_merge_dict= {}
+        relationships =[]
+        for graph in graphs:
+            uid_to_object = {obj.uid: obj for obj in merged.objects}
+            
+            object_merge_dict |= uid_to_object
+            relationships.extend(graph.relationships)
+        merged.objects = list(object_merge_dict.values())
+        merged.relationships = relationships
         
+        return merged

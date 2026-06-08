@@ -31,10 +31,7 @@ pip install git+https://github.com/symbolic-kg/PyClause.git
 ## Setting up python
 
 ```bash
-#create virtual environment
-python3 -m venv .venv
-. .venv/bin/activate
-#install dependencies
+conda activate {env name}
 pip install -e . 
 ```
 

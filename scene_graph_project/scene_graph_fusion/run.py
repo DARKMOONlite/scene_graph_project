@@ -21,7 +21,7 @@ def main(args):
 
     # 4. Export the result
     save_scene_graph_json(merged, "merged_graph.json")
-    print(merged.summary())
+    print(merged.to_dict())
     merged.visualise()
 
 

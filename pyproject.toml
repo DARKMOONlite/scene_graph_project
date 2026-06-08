@@ -19,6 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
+filter-scene-graphs = "scene_graph_project.scene_graph_fusion.filter_scene_graphs:main"
 [tool.setuptools.packages.find]
 where = ["."]   # looks for packages in the repo root
 

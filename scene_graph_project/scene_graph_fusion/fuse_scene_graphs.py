@@ -56,11 +56,14 @@ def main(args):
         
         std.standardise(sg_a)
         std.standardise(sg_b)
+        std.blacklist(sg_a)
+        std.blacklist(sg_b)
 
         # 3. Fuse into a single graph
         
         merged = fusion.fuse([sg_a, sg_b])
 
+        std.blacklist(merged)
         # 4. Export the result
         save_scene_graph_json(merged, Path(args.output) / filename)
         if args.visualise:

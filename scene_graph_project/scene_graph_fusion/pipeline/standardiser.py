@@ -6,6 +6,7 @@ consistent canonical vocabulary before fusion.
 """
 
 from __future__ import annotations
+from uuid import UUID
 
 import spacy
 from scene_graph_project.scene_graph_fusion.pipeline.wordnet import (
@@ -13,7 +14,7 @@ from scene_graph_project.scene_graph_fusion.pipeline.wordnet import (
     build_hierarchy,
     wup_confidence,
 )
-from scene_graph_project.scene_graph_fusion.pipeline.models import SceneGraph
+from scene_graph_project.scene_graph_fusion.pipeline.models import SceneGraph, SceneObject
 
 # ---------------------------------------------------------------------------
 # Built-in synonym map – covers the most common cross-detector divergences.
@@ -80,9 +81,11 @@ class Standardiser:
         predicate_synonym_map: dict[str, str] | None = None,
         wup_threshold: float = 0.8,
         spacy_model: str = "en_core_web_sm",
+        blacklist: set[str] | None = None,
     ):
         self.nlp = spacy.load(spacy_model)
         self.wup_threshold = wup_threshold
+        self.blacklisted_labels = {label.strip().lower() for label in (blacklist or set())}
 
         # label → canonical label
         self._label_map: dict[str, str] = {}
@@ -108,7 +111,26 @@ class Standardiser:
         for rel in graph.relationships:
             rel.canonical_predicate = self.canonicalise_predicate(rel.predicate)
         return graph
+    
+    def blacklist(self, graph: SceneGraph) -> SceneGraph:
+        """Remove blacklisted objects and their incident relationships in-place."""
+        removed_object_ids: set[UUID] = set()
+        remaining_objects = []
 
+        for obj in graph.objects:
+            if obj.canonical_label in self.blacklisted_labels or obj.label in self.blacklisted_labels:
+                removed_object_ids.add(obj.uid)
+            else:
+                remaining_objects.append(obj)
+
+        graph.objects = remaining_objects
+        graph.relationships = [
+            rel
+            for rel in graph.relationships
+            if rel.subject_uid not in removed_object_ids and rel.object_uid not in removed_object_ids
+        ]
+        return graph
+    
     def canonicalise_label(self, label: str) -> str:
         """Return the canonical form of an object *label*."""
         label = label.strip().lower()

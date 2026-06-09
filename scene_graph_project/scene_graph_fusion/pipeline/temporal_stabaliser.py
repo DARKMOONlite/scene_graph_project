@@ -14,7 +14,7 @@ from __future__ import annotations
 from copy import deepcopy
 from uuid import UUID, uuid4
 
-from scene_graph_project.scene_graph_fusion.pipeline.models import BoundingBox, SceneGraph,SceneObject,Relationship
+from scene_graph_project.scene_graph_fusion.pipeline.models import BoundingBox, SceneGraph, SceneGraphShape,SceneObject,Relationship
 from scene_graph_project.scene_graph_fusion.pipeline.network_flow import NetworkFlow, NodeID, TrackingConfig
 
 class TemporalStabaliser:
@@ -54,21 +54,24 @@ class TemporalStabaliser:
             config=TrackingConfig(
                 birth_cost=1.2,
                 death_cost=1.2,
-                birth_time_bias=0.02,
-                death_time_bias=0.02,
+                birth_time_bias=1,
+                death_time_bias=1,
                 skip_penalty=0.5,
+                continuation_bonus=0.35,
                 max_skip=2,
-                max_candidates_per_node=5,
+                max_candidates_per_node=3,
                 min_track_length=2,
-                viz_show_source_sink=False,
+                transition_cost_cap=180,
+                viz_show_source_sink=True,
+                viz_show_zero_flow=True,
             )
         )
 
         
 
-        _mcf, _node_ids, filtered_tracks = nf.m_cost_flow(tracked_graphs)
+        _mcf, _node_ids, filtered_tracks = nf.m_cost_circular_flow(tracked_graphs)
         aligned_scene_graphs = self.align_scene_graph_ids(filtered_tracks, tracked_graphs)
-        nf.visualise(_mcf,_node_ids)
+        nf.visualise(_mcf,_node_ids,shape=SceneGraphShape.SHELL)
 
 
         return aligned_scene_graphs

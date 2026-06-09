@@ -16,6 +16,11 @@ from matplotlib.axes import Axes
 import networkx as nx
 import matplotlib.pyplot as plt
 from numpy import shape
+from scallopy.attribute import NamedTuple
+
+class NodeID(NamedTuple):
+    frame_idx: int
+    obj_idx: int
 
 
 class SceneGraphJsonEncoder(json.JSONEncoder):
@@ -155,6 +160,7 @@ class SceneGraphShape(Enum):
     SPIRAL = nx.spiral_layout
     RANDOM = nx.random_layout
     MULTIPARTITE = nx.multipartite_layout
+    SHELL = nx.shell_layout
 
 @dataclass
 class SceneGraph:
@@ -215,7 +221,7 @@ class SceneGraph:
             node_labels:bool=True,
             edge_labels:bool=True,
             shape:SceneGraphShape=SceneGraphShape.SPRING,
-            subsets:dict[str,int]|None=None, # necessary for multipartite layout, ignored otherwise
+            subsets:dict[int,NodeID]|None=None, # necessary for multipartite layout, ignored otherwise
             axis:Axes|None=None,
             show_plot:bool=True):
         G = nx.Graph()
@@ -238,18 +244,30 @@ class SceneGraph:
             and_node_labels:bool=True,
             and_edge_labels:bool=True,
             shape:SceneGraphShape=SceneGraphShape.SPRING,
-            subsets:dict[str,int]|None=None,
+            subsets:dict[int,tuple[NodeID,bool]]|None=None,
             axis:Axes|None=None,
             show_plot:bool=True):
         
         colours:list[tuple] = []
         for _ in range(len(network.nodes)):
             colours.append((random()*0.8,random(),random()))
-        if shape == SceneGraphShape.RANDOM or shape == SceneGraphShape.SPRING or shape == SceneGraphShape.SPIRAL:
+        if shape == SceneGraphShape.RANDOM or shape == SceneGraphShape.SPRING or shape == SceneGraphShape.SPIRAL :
             layout = shape(G=network,seed=0)
         if shape == SceneGraphShape.MULTIPARTITE:
-            layout = shape(network,subset_key=subsets)
-        nx.draw(G=network,pos=layout,ax=axis,node_color=colours)
+            subset_key:dict[int,list[int]] = {}
+            for id,(node_id,is_in_node) in subsets.items():
+                if is_in_node: # is an in node
+                    subset_key.setdefault(node_id.frame_idx*2, []).append(id) # order them into columns based on their frame
+                else: # is an out node
+                    subset_key.setdefault(node_id.frame_idx*2+1, []).append(id) # order them into columns based on their frame
+            layout = shape(network,subset_key=subset_key)
+        if shape == SceneGraphShape.SHELL:
+            lists:list[list] = [[] for _ in range(max(node.obj_idx for node,_ in subsets.values())+1)]
+            for id, (node_id, _) in subsets.items():
+                lists[node_id.obj_idx].append(id) # order them into shells based on their object index
+            layout = shape(network, nlist=lists)
+    
+        nx.draw(G=network,pos=layout,ax=axis,node_color=colours)#,connectionstyle="arc3,rad=0.2",arrows=True)
         if and_node_labels:
             nx.draw_networkx_labels(G=network,pos=layout,labels=nx.get_node_attributes(network,'label'),ax=axis)
         if and_edge_labels:

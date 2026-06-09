@@ -3,19 +3,21 @@ from typing import NamedTuple
 
 from ortools.graph.python import min_cost_flow
 from dataclasses import dataclass
-from scene_graph_project.scene_graph_fusion.pipeline.models import BoundingBox, SceneGraph, SceneGraphShape,SceneObject,Relationship
+from scene_graph_project.scene_graph_fusion.pipeline.models import NodeID, SceneGraph, SceneGraphShape,SceneObject,Relationship
 from collections import Counter
 import matplotlib.pyplot as plt
 @dataclass
 class TrackingConfig:
     birth_cost: float = 1.2        # base cost for starting a new track at any detection
     death_cost: float = 1.2        # base cost for ending a track at any detection
-    birth_time_bias: float = 0.02  # additive bias per frame index for birth arcs
-    death_time_bias: float = 0.02  # additive bias per distance-to-end for death arcs
+    birth_time_bias: float = 0.2  # additive bias per frame index for birth arcs
+    death_time_bias: float = 0.2  # additive bias per distance-to-end for death arcs
     skip_penalty: float = 0.5      # extra cost per skipped frame in a gap transition
+    continuation_bonus: float = 0.35  # reward for continuing a track instead of terminating
     max_skip: int = 2              # maximum frames a track can bridge without a detection
     max_candidates_per_node: int = 5
     min_track_length: int = 2      # minimum detections required to keep a track
+    transition_cost_cap: int = 180  # keep transition costs in a stable range after scaling
     cost_scale: int = 100
     bb_penalty_weight: float = 1.0
     label_penalty_weight: float = 0.5
@@ -24,9 +26,6 @@ class TrackingConfig:
     viz_show_source_sink: bool = False   # whether to show source/sink arcs in visualisation
     viz_show_zero_flow: bool = True           # whether to show arcs with zero flow in visualisation
 
-class NodeID(NamedTuple):
-    frame_idx: int
-    obj_idx: int
 
 
 class SplitNodeMaps(NamedTuple):
@@ -87,12 +86,16 @@ class NetworkFlow:
         birth_bias_scaled = self._scaled_int(self.config.birth_time_bias)
         death_bias_scaled = self._scaled_int(self.config.death_time_bias)
         skip_scale = self._scaled_int(self.config.skip_penalty)
+        continuation_bonus_scaled = self._scaled_int(self.config.continuation_bonus)
 
         # ---- Arcs ----
 
         # 1. Overflow: S -> T absorbs unused supply so the problem is always feasible.
         # Keep this expensive to avoid swallowing flow that should go through tracks.
-        overflow_cost = 10 * (birth_cost_scaled + death_cost_scaled)
+        """When a transition arc is used (e.g. out(d0) → in(d1)), it occupies in(d1)'s capacity. 
+        But S still has N units to route — the unit that would have taken the S → in(d1) birth arc is now blocked (capacity=1 already used).
+        That stranded unit has only one escape: the overflow arc at 50 × (birth + death) ≈ 240 scaled units."""
+        overflow_cost = 50 * (birth_cost_scaled + death_cost_scaled)
         mcf.add_arc_with_capacity_and_unit_cost(S, T, total_detections, overflow_cost)
 
         # 2. Birth arcs: S -> in-node (a track can start at any detection in any frame).
@@ -106,7 +109,7 @@ class NetworkFlow:
             death_cost = death_cost_scaled + (death_bias_scaled * (last_frame_idx - node_id.frame_idx))
             mcf.add_arc_with_capacity_and_unit_cost(out_node, T, 1, death_cost)
 
-        # 4. Capacity limiter per detection: in-node -> out-node with capacity 1.
+        # 4. Intranode arcs: in-node -> out-node with capacity 1.
         for node_id in in_node_ids:
             mcf.add_arc_with_capacity_and_unit_cost(in_node_ids[node_id], out_node_ids[node_id], 1, 0)
 
@@ -138,7 +141,8 @@ class NetworkFlow:
                             if r.subject_uid == obj2.uid or r.object_uid == obj2.uid
                         ]
                         base = self.entity_cost(obj1, obj2, rel_a, rel_b, len(tracked_graphs))
-                        transition_cost = max(1, base + skip_extra)
+                        transition_cost = max(1, base + skip_extra - continuation_bonus_scaled)
+                        transition_cost = min(self.config.transition_cost_cap, transition_cost)
                         candidates.append((transition_cost, in_node2))
 
                     candidates.sort(key=lambda x: x[0]) # only add the best few candidates to limit the graph size and focus on the most promising matches
@@ -149,14 +153,13 @@ class NetworkFlow:
         # S injects one unit per detection; the overflow arc absorbs whatever is not
         # routed through real birth arcs, keeping the problem balanced and feasible.
         supplies = [0] * n
-        for node_id, node in in_node_ids.items():
-            if node_id.frame_idx == 0:
-                supplies[node] += 1  # only detections in the first frame are guaranteed to be births; later ones could be skipped by a track starting earlier
-            if node_id.frame_idx == len(tracked_graphs) - 1:
-                supplies[node] -= 1  # only detections in the last frame are guaranteed to be deaths; earlier ones could be skipped by a track ending later
+        # for node_id, node in in_node_ids.items():
+        #     if node_id.frame_idx == 0:
+        #         supplies[node] += 1  # only detections in the first frame are guaranteed to be births; later ones could be skipped by a track starting earlier
+        #     if node_id.frame_idx == len(tracked_graphs) - 1:
+        #         supplies[node] -= 1  # only detections in the last frame are guaranteed to be deaths; earlier ones could be skipped by a track ending later
         supplies[S] = total_detections
         supplies[T] = -(total_detections)
-        supplies[T] -= sum(supplies)
         if sum(supplies) != 0:
             raise ValueError(f"Supplies must sum to zero {sum(supplies)}")
         mcf.set_nodes_supplies(list(range(n)), supplies)
@@ -183,7 +186,132 @@ class NetworkFlow:
             print("")
 
         return mcf, SplitNodeMaps(in_node_ids=in_node_ids, out_node_ids=out_node_ids), filtered_tracks
+  
 
+    def m_cost_circular_flow(
+                self, tracked_graphs: list[SceneGraph]
+    ) -> tuple[min_cost_flow.SimpleMinCostFlow, SplitNodeMaps, list[list[NodeID]]]:
+        """Build a circular flow system for determing object tracks. 
+        in this there exists a single node that connects the start of the first scene graph to the end of the last, creating a loop
+        flow should try to connect to a node in the next frame, 
+
+        Args:
+            tracked_graphs (list[SceneGraph]): _description_
+
+        Returns:
+            tuple[min_cost_flow.SimpleMinCostFlow, SplitNodeMaps, list[list[NodeID]]]: _description_
+        """
+        if len(tracked_graphs) < 2:
+            raise ValueError("Need at least 2 frames for tracking")
+
+        mcf = min_cost_flow.SimpleMinCostFlow()
+        in_node_ids: dict[NodeID, int] = {}
+        out_node_ids: dict[NodeID, int] = {}
+        n = 0
+        for t, graph in enumerate(tracked_graphs):
+            for obj_id in range(len(graph.objects)):
+                node_id = NodeID(t, obj_id)
+                in_node_ids[node_id] = n
+                n += 1
+                out_node_ids[node_id] = n
+                n += 1
+
+        total_detections = len(in_node_ids)
+        S = n;  n += 1   # global source
+        T = n;  n += 1   # global sink
+        
+        birth_cost_scaled = self._scaled_int(self.config.birth_cost, min_value=1)
+        death_cost_scaled = self._scaled_int(self.config.death_cost, min_value=1)
+        birth_bias_scaled = self._scaled_int(self.config.birth_time_bias)
+        death_bias_scaled = self._scaled_int(self.config.death_time_bias)
+        skip_scale = self._scaled_int(self.config.skip_penalty)
+        continuation_bonus_scaled = self._scaled_int(self.config.continuation_bonus)
+        
+        # 1. Overflow, no overflow arc, as it causes large costs to be attributed to movements through the graph 
+        
+        # 2. Intranode arcs: in-node -> out-node with capacity 1.
+        for node_id in in_node_ids:
+            mcf.add_arc_with_capacity_and_unit_cost(in_node_ids[node_id], out_node_ids[node_id], 1, 0)
+        # 3. Transition arcs: out(t) -> in(t2) for t2 in [t+1, t+max_skip].
+        for t in range(len(tracked_graphs)):
+            frame_t = [
+                (node_id.obj_idx, out_node, tracked_graphs[t].objects[node_id.obj_idx])
+                for node_id, out_node in out_node_ids.items()
+                if node_id.frame_idx == t
+            ]
+            for t2 in range(t + 1, min(t + self.config.max_skip + 1, len(tracked_graphs))):
+                skip_extra = skip_scale * (t2 - t - 1)
+                frame_t2 = [
+                    (node_id2.obj_idx, in_node2, tracked_graphs[t2].objects[node_id2.obj_idx])
+                    for node_id2, in_node2 in in_node_ids.items()
+                    if node_id2.frame_idx == t2
+                ]
+                for obj_id1, out_node1, obj1 in frame_t:
+                    rel_a = [
+                        r for r in tracked_graphs[t].relationships
+                        if r.subject_uid == obj1.uid or r.object_uid == obj1.uid
+                    ]
+                    candidates: list[tuple[int, int]] = []
+                    for obj_id2, in_node2, obj2 in frame_t2:
+                        rel_b = [
+                            r for r in tracked_graphs[t2].relationships
+                            if r.subject_uid == obj2.uid or r.object_uid == obj2.uid
+                        ]
+                        base = self.entity_cost(obj1, obj2, rel_a, rel_b, len(tracked_graphs))
+                        transition_cost = max(1, base + skip_extra - continuation_bonus_scaled)
+                        transition_cost = min(self.config.transition_cost_cap, transition_cost)
+                        candidates.append((transition_cost, in_node2))
+
+                    candidates.sort(key=lambda x: x[0]) # only add the best few candidates to limit the graph size and focus on the most promising matches
+                    for transition_cost, in_node2 in candidates[: self.config.max_candidates_per_node]:
+                        mcf.add_arc_with_capacity_and_unit_cost(out_node1, in_node2, 1, transition_cost)
+        # 4. Birth arcs: S -> in-node (a track can start at any detection in any frame).
+        for node_id, in_node in in_node_ids.items():
+            birth_cost = birth_cost_scaled + (birth_bias_scaled * node_id.frame_idx)
+            mcf.add_arc_with_capacity_and_unit_cost(S, in_node, 1, birth_cost)
+            print(f"Added birth arc: S -> in({node_id}) with cost {birth_cost}")
+
+        # 5. Death arcs: out-node -> T (a track can end at any detection in any frame).
+        last_frame_idx = len(tracked_graphs) - 1
+        for node_id, out_node in out_node_ids.items():
+            death_cost = death_cost_scaled + (death_bias_scaled * (last_frame_idx - node_id.frame_idx))
+            mcf.add_arc_with_capacity_and_unit_cost(out_node, T, 1, death_cost)
+            print(f"Added death arc: out({node_id}) -> T with cost {death_cost}")
+        #6. Circular arc: T->S with zero cost and capacity equal to total detections, allowing flow to loop back from the end to the start
+        mcf.add_arc_with_capacity_and_unit_cost(T, S, total_detections, 0)
+        
+        
+        # ----- Supplies ----
+        supplies = [0] * n
+        for node_id, node in in_node_ids.items():
+            supplies[node] += 1  # each detection must be entered once
+        for node_id, node in out_node_ids.items():
+            supplies[node] -= 1  # each detection must be exited once
+        # S and T have zero net supply; they are just transit nodes in the circular flow
+        if sum(supplies) != 0:
+            raise ValueError(f"Supplies must sum to zero {sum(supplies)}")
+        mcf.set_nodes_supplies(list(range(n)), supplies)
+        
+        status = mcf.solve()
+        if status != mcf.OPTIMAL:
+            print(f"MCF solver failed with status {status}")
+            exit(1)
+        tracks = self.extract_tracks(mcf, in_node_ids, out_node_ids, S, T)
+        filtered_tracks = self.filter_tracks(tracks)
+        self.last_tracks = tracks
+        self.last_filtered_tracks = filtered_tracks
+        print(
+            f"Extracted {len(tracks)} tracks "
+            f"({len(filtered_tracks)} kept with >= {self.config.min_track_length} detections)."
+        )
+        for track_idx, track in enumerate(filtered_tracks, start=1):
+            print(f"  Track {track_idx}:", end="")
+            for frame_idx, obj_idx in track:
+                print(f" (Frame {frame_idx}: Obj {obj_idx})", end="")
+            print("")
+        return mcf, SplitNodeMaps(in_node_ids=in_node_ids, out_node_ids=out_node_ids), filtered_tracks
+    
+    
     def _scaled_int(self, value: float, min_value: int = 0) -> int:
         """Convert a float cost to an integer cost for OR-Tools min-cost flow."""
         return max(min_value, int(round(value * self.config.cost_scale)))
@@ -246,27 +374,26 @@ class NetworkFlow:
         
         
         
-    def entity_cost(self, obj1: SceneObject, obj2: SceneObject, rel_a:list[Relationship], rel_b:list[Relationship],num_graphs:int) -> int:
-        """Calculate the cost of matching two entities based on their attributes and relationships."""
+    def entity_cost(self,
+                    obj1: SceneObject, 
+                    obj2: SceneObject, 
+                    rel_a:list[Relationship], 
+                    rel_b:list[Relationship],
+                    num_graphs:int,
+                    min_value:int=0,
+                    max_value:int=50,
+                    ) -> int:
+        """Calculate the cost of matching two entities based on their attributes and relationships. returns a value
+        between 0 and max_value, where 0 means a perfect match and max_value means a very poor match."""
         bbox_penalty = self._bbox_penalty(obj1, obj2)
         label_penalty = self._label_penalty(obj1, obj2)
         relationship_penalty = self._relationship_penalty(obj1, obj2, rel_a, rel_b)
         distance_penalty = self._centroid_distance_penalty(obj1, obj2)
 
-        cost = (self.config.bb_penalty_weight * bbox_penalty 
-                + self.config.label_penalty_weight * label_penalty 
-                + self.config.relationship_penalty_weight * relationship_penalty
-                + self.config.distance_penalty_weight * distance_penalty)
-        cost /= num_graphs # normalize by number of graphs to keep costs comparable across different track lengths
-        # if cost < 10:
-        #     print(
-        #         f"  entity_cost | "
-        #         f"obj1_uid={obj1.uid} obj2_uid={obj2.uid} "
-        #         f"bbox_penalty={bbox_penalty:.2f} label_penalty={label_penalty:.2f} relationship_penalty={relationship_penalty:.2f} "
-        #         f"total_cost={cost:.2f}"
-        #     )
-        # Keep the score low for strong matches and high for weak ones.
-        return int(round(cost * self.config.cost_scale))
+        cost = ( bbox_penalty +  label_penalty + relationship_penalty + distance_penalty)/4 * max_value
+        # cost /= num_graphs # normalize by number of graphs to keep costs comparable across different track lengths
+
+        return int(max(min_value, cost))
 
     @staticmethod
     def _bbox_penalty(obj1: SceneObject, obj2: SceneObject) -> float:
@@ -320,51 +447,55 @@ class NetworkFlow:
         return min(distance / max_distance, 1.0)
 
 
-    def visualise(self, mcf: min_cost_flow.SimpleMinCostFlow, node_maps: SplitNodeMaps,show_source_sink:bool=True):
+    def visualise(self, mcf: min_cost_flow.SimpleMinCostFlow, node_maps: SplitNodeMaps,show_source_sink:bool=True,shape:SceneGraphShape=SceneGraphShape.SPRING):
         """ Visualise the tracking graph with tracks highlighted.  """
         
         G = SceneGraph("")
         
-        subsets:dict[int,int] = {}
-        subsets[0] = [int(mcf.num_nodes()-2)]
+
         mcf:min_cost_flow.SimpleMinCostFlow = mcf
         for node_id, node in node_maps.in_node_ids.items():
-            subsets.setdefault(node_id.frame_idx*2+1, []).append(int(node))
             G.add_object(SceneObject(uid=int(node), label=f"In {node_id.obj_idx}"))
         for node_id, node in node_maps.out_node_ids.items():
-            subsets.setdefault(node_id.frame_idx*2+2, []).append(int(node))
             G.add_object(SceneObject(uid=int(node), label=f"Out {node_id.obj_idx}"))
         G.add_object(SceneObject(uid=int(mcf.num_nodes()-2), label="Source (S)"))
         G.add_object(SceneObject(uid=int(mcf.num_nodes()-1), label="Sink (T)"))
         
         
         G2 = deepcopy(G)
-        subsets[mcf.num_nodes()-1] = [int(mcf.num_nodes()-1)]
+        
         for arc in range(mcf.num_arcs()):
             if not self.config.viz_show_zero_flow and mcf.flow(arc) <= 0:
                 continue
             u, v = mcf.tail(arc), mcf.head(arc)
+            
             cost = mcf.unit_cost(arc)
             flow = mcf.flow(arc)
-            # if (u == mcf.num_nodes()-2 or v == mcf.num_nodes()-1): # S or T
-            #     if not self.config.show_source_sink_viz:
-            #         continue
-            #     G.add_relationship(Relationship(subject_uid=int(u), object_uid=int(v), predicate=f"S->T cost={cost} flow={flow}"))
-            #     G2.add_relationship(Relationship(subject_uid=int(u), object_uid=int(v), predicate=f"S->T cost={cost} flow={flow}"))
-            # else:
-            G.add_relationship(Relationship(subject_uid=int(u), object_uid=int(v), predicate=str(cost)))
-            G2.add_relationship(Relationship(subject_uid=int(u), object_uid=int(v), predicate=str(flow)))
-        
+            if (u == mcf.num_nodes()-2 or v == mcf.num_nodes()-1): # S or T
+                if not self.config.viz_show_source_sink:
+                    continue
+                G.add_relationship(Relationship(subject_uid=int(u), object_uid=int(v), predicate=f"S->T cost={cost} flow={flow}"))
+                G2.add_relationship(Relationship(subject_uid=int(u), object_uid=int(v), predicate=f"S->T cost={cost} flow={flow}"))
+            else:
+                G.add_relationship(Relationship(subject_uid=int(u), object_uid=int(v), predicate=str(cost)))
+                G2.add_relationship(Relationship(subject_uid=int(u), object_uid=int(v), predicate=str(flow)))
+            
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+        
+        subsets:dict[int,tuple[NodeID,bool]] = {value: (key, True) for key, value in node_maps.in_node_ids.items()} | \
+        {value: (key, False) for key, value in node_maps.out_node_ids.items()} # id : (Node_id, is_in_node)
+        subsets[int(mcf.num_nodes()-2)] = (NodeID(-1, -1), False) # S
+        subsets[int(mcf.num_nodes()-1)] = (NodeID(100, -1), False) # T
+        
         G.visualise(node_labels=True, 
                     edge_labels=True, 
-                    shape=SceneGraphShape.MULTIPARTITE,
+                    shape=shape,
                     subsets=subsets,
                     axis=ax1,
                     show_plot=False)
         G2.visualise(node_labels=True, 
                     edge_labels=True, 
-                    shape=SceneGraphShape.MULTIPARTITE,
+                    shape=shape,
                     subsets=subsets,
                     axis=ax2,
                     show_plot=False)

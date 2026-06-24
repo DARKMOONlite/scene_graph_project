@@ -16,7 +16,8 @@ from uuid import UUID, uuid4
 
 from scene_graph_project.scene_graph_fusion.pipeline.models import BoundingBox, SceneGraph,SceneObject,Relationship
 from scene_graph_project.scene_graph_fusion.pipeline.network_flow import NetworkFlow, NodeID, TrackingConfig
-
+from boxmot.trackers import OccluBoost
+import numpy as np
 class TemporalStabaliser:
     """A temporal stabaliser for the scene graph fusion pipeline. It takes in a list of scene graphs 
     and outputs a list of stabalised scene graphs. 
@@ -32,11 +33,10 @@ class TemporalStabaliser:
 
     def stabalise(self, graphs: list[SceneGraph]) -> list[SceneGraph]:
         """Stabalise the given list of scene graphs and return the stabalised graphs."""
-        entity_tracked_graphs = self.entity_tracking(graphs)
-        
-        denoised_graphs = self.reduce_noise(entity_tracked_graphs)
+        # entity_tracked_graphs = self.entity_tracking(graphs)
+        pass
+    
 
-        return denoised_graphs if denoised_graphs is not None else entity_tracked_graphs
     
     def entity_tracking(self, ordered_graphs: list[SceneGraph], max_skip: int = 2) -> list[SceneGraph]:
         """Track entities across frames and assign consistent IDs to the same entity."""
@@ -63,15 +63,35 @@ class TemporalStabaliser:
                 viz_show_source_sink=False,
             )
         )
-
-        
-
         _mcf, _node_ids, filtered_tracks = nf.m_cost_flow(tracked_graphs)
         aligned_scene_graphs = self.align_scene_graph_ids(filtered_tracks, tracked_graphs)
         nf.visualise(_mcf,_node_ids)
 
 
         return aligned_scene_graphs
+    
+    def mot_tracking(self, graphs: list[SceneGraph],images:list[np.ndarray]) -> list[SceneGraph]:
+        """Use a multi-object tracking approach to track entities across frames."""
+        tracker = OccluBoost()
+        
+        scene_pairs = zip(graphs,images)
+        for scene in scene_pairs:
+            detections = np.ndarray((len(scene[0].objects), 6)) # dets: (N, 6) array with [x1, y1, x2, y2, conf, cls] per detection
+            for idx, obj in enumerate(scene[0].objects):
+                # Assuming obj.bbox is in the format [x_center, y_center, width, height]
+                
+                if isinstance(obj.bbox, BoundingBox):
+                    detections[idx] = [obj.bbox.x_min, obj.bbox.y_min, obj.bbox.x_max, obj.bbox.y_max, obj.confidence, obj.canonical_label]
+                else:
+                    print(f"Object {obj.uid} has invalid bbox format: {obj.bbox}")
+                
+            
+            tracks = tracker.update(scene[1],detections) # tracks: (M, 8) array with [x1, y1, x2, y2, id, conf, cls, det_ind] per track
+            print(tracks)
+            
+        
+
+
     
 
     def align_scene_graph_ids(self, tracks: list[list[NodeID]], graphs: list[SceneGraph]) -> list[SceneGraph]:

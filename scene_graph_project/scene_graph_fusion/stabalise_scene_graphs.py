@@ -3,16 +3,16 @@ from argparse import ArgumentParser
 from pathlib import Path
 import sys
 
-ILP_PROJECT_ROOT = Path("/home/research/Documents/ILP/ilp")
+ILP_PROJECT_ROOT = Path("~/Documents/phd/inductive_logic_programming/neurosymbolic_ILP").expanduser()
 SCENE_GRAPH_ROOT = Path("/mnt/sda1/Datasets/nuscenes/v1.0-mini/scene_graphs/samples/react++")
 if str(ILP_PROJECT_ROOT) not in sys.path:
     sys.path.append(str(ILP_PROJECT_ROOT))
 
-from scene_graph_project.scene_graph_fusion.pipeline.models import SceneGraph
-from src.pipeline.database_manager import DatabaseManager
+from neurosymbolic_pipeline.database_manager import DatabaseManager
 from scene_graph_project.scene_graph_fusion.pipeline.io_formats import load_scene_graph_json, collect_scene_graph_files
 from scene_graph_project.scene_graph_fusion.pipeline.temporal_stabaliser import TemporalStabaliser
-
+import numpy as np
+from PIL import Image
 
 
 
@@ -50,15 +50,15 @@ def main(args):
         before_objects = sum(len(graph.objects) for graph in scene_graphs)
         before_relationships = sum(len(graph.relationships) for graph in scene_graphs)
         
-        tracked_graphs = temporal_stabaliser.stabalise(scene_graphs)
-        matching_ids:dict[int,int]={}
-        for graph in tracked_graphs:
-            for obj in graph.objects:
-                matching_ids[obj.uid] = matching_ids.get(obj.uid, 0) + 1
-            # graph.visualise()
-        for uid, count in matching_ids.items():
-            if count > 1:
-                print(f"Object UID {uid} appears in {count} frames")
+        tracked_graphs = temporal_stabaliser.mot_tracking(scene_graphs, images=[np.array(Image.open(path)) for path in track[:5]]) # loads the images as numpy arrays
+        # matching_ids:dict[int,int]={}
+        # for graph in tracked_graphs:
+        #     for obj in graph.objects:
+        #         matching_ids[obj.uid] = matching_ids.get(obj.uid, 0) + 1
+        #     # graph.visualise()
+        # for uid, count in matching_ids.items():
+        #     if count > 1:
+        #         print(f"Object UID {uid} appears in {count} frames")
         
         # after_objects = sum(len(graph.objects) for graph in tracked_graphs)
         # after_relationships = sum(len(graph.relationships) for graph in tracked_graphs)

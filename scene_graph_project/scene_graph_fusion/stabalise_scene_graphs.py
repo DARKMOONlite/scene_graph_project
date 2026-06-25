@@ -50,7 +50,7 @@ def main(args):
         before_objects = sum(len(graph.objects) for graph in scene_graphs)
         before_relationships = sum(len(graph.relationships) for graph in scene_graphs)
         
-        tracked_graphs = temporal_stabaliser.stabalise(scene_graphs[:2])
+        tracked_graphs = temporal_stabaliser.stabalise(scene_graphs[:3])
         matching_ids:dict[int,int]={}
         for graph in tracked_graphs:
             for obj in graph.objects:

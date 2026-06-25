@@ -71,7 +71,7 @@ class TemporalStabaliser:
 
         _mcf, _node_ids, filtered_tracks = nf.m_cost_circular_flow(tracked_graphs)
         aligned_scene_graphs = self.align_scene_graph_ids(filtered_tracks, tracked_graphs)
-        nf.visualise(_mcf,_node_ids,shape=SceneGraphShape.SHELL)
+        nf.visualise(_mcf,_node_ids,shape=SceneGraphShape.SPRING)
 
 
         return aligned_scene_graphs

@@ -284,9 +284,9 @@ class NetworkFlow:
         # ----- Supplies ----
         supplies = [0] * n
         for node_id, node in in_node_ids.items():
-            supplies[node] += 1  # each detection must be entered once
+            supplies[node] -= 1  # each detection must be entered once
         for node_id, node in out_node_ids.items():
-            supplies[node] -= 1  # each detection must be exited once
+            supplies[node] += 1  # each detection must be exited once
         # S and T have zero net supply; they are just transit nodes in the circular flow
         if sum(supplies) != 0:
             raise ValueError(f"Supplies must sum to zero {sum(supplies)}")

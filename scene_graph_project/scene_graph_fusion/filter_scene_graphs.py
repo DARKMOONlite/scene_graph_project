@@ -21,6 +21,12 @@ OBJECT_BLACKLIST: set[str] = {
     "window",
     "sky",
     "umbrella",
+    "wall",
+    "grass",
+    "build",
+    "leaf",
+    "fence",
+    
 }
 
 

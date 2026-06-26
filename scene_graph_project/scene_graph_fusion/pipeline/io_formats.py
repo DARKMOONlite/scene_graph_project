@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from uuid import UUID
 
 from scene_graph_project.scene_graph_fusion.pipeline.models import BoundingBox, Relationship, SceneGraph, SceneObject
 
@@ -179,11 +180,11 @@ def _dict_to_scene_graph(data: dict, source: str = "") -> SceneGraph:
         image_id=str(data.get("image_id", "")),
         source=source or data.get("source", ""),
     )
-    id_to_uid: dict[int, int] = {}
-    iterator = 0
-    for obj_data in data.get("objects", []):
-        oid = iterator
-        
+    id_to_uid: dict[str, UUID] = {}
+    for iterator, obj_data in enumerate(data.get("objects", [])):
+        oid = obj_data.get("id", obj_data.get("object_id", iterator))
+        oid_key = str(oid)
+
         label = obj_data.get("label", obj_data.get("name", ""))
         raw_bbox = obj_data.get("bbox")
         bbox = BoundingBox(*raw_bbox) if raw_bbox and len(raw_bbox) == 4 else None
@@ -198,18 +199,19 @@ def _dict_to_scene_graph(data: dict, source: str = "") -> SceneGraph:
             confidence=confidence,
             source=source,
         )
-        iterator += 1
-        id_to_uid[oid] = so.uid
+        id_to_uid[oid_key] = so.uid
         graph.add_object(so)
 
     for rel_data in data.get("relationships", []):
-        subj_id = int(rel_data.get("subject", -1))
-        obj_id = int(rel_data.get("object", -1))
+        subj_id = rel_data.get("subject_id", rel_data.get("subject", -1))
+        obj_id = rel_data.get("object_id", rel_data.get("object", -1))
         predicate = rel_data.get("predicate", "")
         confidence = float(rel_data.get("score", rel_data.get("confidence", 1.0)))
 
-        subj_uid = id_to_uid.get(subj_id, subj_id)
-        obj_uid = id_to_uid.get(obj_id, obj_id)
+        subj_uid = id_to_uid.get(str(subj_id))
+        obj_uid = id_to_uid.get(str(obj_id))
+        if subj_uid is None or obj_uid is None:
+            continue
         graph.add_relationship(Relationship(
             subject_uid=subj_uid,
             predicate=predicate,

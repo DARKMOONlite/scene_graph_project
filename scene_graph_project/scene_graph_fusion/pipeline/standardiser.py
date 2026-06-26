@@ -8,7 +8,14 @@ consistent canonical vocabulary before fusion.
 from __future__ import annotations
 from uuid import UUID
 
+#! for some reason importing spacy is causing errors in some scripts that dont use it, so we import it lazily in the Standardiser class
+# try:
+#     import os
+#     os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib_cache")
 import spacy
+# except ImportError:
+#     spacy = None
+    # print("spaCy is not installed. Please install spaCy to use the Standardiser class.")
 from scene_graph_project.scene_graph_fusion.pipeline.wordnet import (
     get_synsets_for_noun,
     build_hierarchy,

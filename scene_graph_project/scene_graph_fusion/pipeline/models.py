@@ -253,7 +253,9 @@ class SceneGraph:
         if and_node_labels:
             nx.draw_networkx_labels(G=network,pos=layout,labels=nx.get_node_attributes(network,'label'),ax=axis)
         if and_edge_labels:
-            nx.draw_networkx_edge_labels(G=network,pos=layout,edge_labels=nx.get_edge_attributes(network,'label'),ax=axis)
+            nx.draw_networkx_edge_labels(G=network,pos=layout,
+                                        edge_labels=nx.get_edge_attributes(network,'label'),font_size=5,
+                                        ax=axis)
         if show_plot:
             plt.show()
             

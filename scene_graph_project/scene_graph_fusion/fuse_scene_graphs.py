@@ -76,9 +76,9 @@ if __name__ == "__main__":
     install_wordnet()
     
     parser = ArgumentParser(description="Run the scene graph fusion pipeline on example data.")
-    parser.add_argument("folder_a", type=str, default="/mnt/sda1/Datasets/hl_dataset/scene_graphs/react++",
+    parser.add_argument("folder_a", type=str, default="/mnt/sda1/Datasets/nuscenes/v1.0-mini/scene_graphs/react++",
                         help="Path to JSON file with detections from model A.")
-    parser.add_argument("folder_b", type=str, default="/mnt/sda1/Datasets/hl_dataset/scene_graphs/reltr",
+    parser.add_argument("folder_b", type=str, default="/mnt/sda1/Datasets/nuscenes/v1.0-mini/scene_graphs/reltr",
                         help="Path to JSON file with detections from model B.")
     parser.add_argument("-d","--depth", type=int, default=2, help="folder depth to traverse for scene graph JSON files (default: 2)")
     parser.add_argument("-o","--output",help="folder to save the merged graphs to",type=str,default = "merged_graphs")

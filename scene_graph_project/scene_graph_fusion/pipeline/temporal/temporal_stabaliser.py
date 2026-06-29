@@ -38,6 +38,7 @@ class TemporalStabaliser:
     """
 
     def __init__(self):
+        self.tracker: BaseTracker | None = None
         pass
 
     def stabalise(self, graphs: list[SceneGraph]) -> TemporalSceneGraph:
@@ -86,7 +87,10 @@ class TemporalStabaliser:
         if len(graphs) != len(images):
             raise ValueError(f"Expected the same number of graphs and images, got {len(graphs)} and {len(images)}.")
 
-        tracker: BaseTracker = create_tracker("botsort", reid_weights="clip_vehicleid.pt")
+        if self.tracker is None:
+            self.tracker = create_tracker("botsort", reid_weights="clip_vehicleid.pt")
+
+            
         # tracker: OccluBoost = OccluBoost(
         #     reid_model="ss.pt",
         #     recovery_appearance_thresh=0.4,
@@ -98,7 +102,7 @@ class TemporalStabaliser:
         #     )  # type: ignore
         #  update parameters
         
-        tracker.det_thresh
+
         
         
         tracked_graphs = deepcopy(graphs)
@@ -121,8 +125,8 @@ class TemporalStabaliser:
                 else:
                     detections[idx, 4] = obj.confidence
 
-            tracks = tracker.update(detections, image)
-            tracker_images.append(tracker.plot_results(image,show_trajectories=True) )
+            tracks = self.tracker.update(detections, image)
+            tracker_images.append(self.tracker.plot_results(image,show_trajectories=True) )
             for track in tracks:
                 det_idx = int(track[7])
                 if det_idx < 0 or det_idx >= len(scene.objects):
@@ -133,7 +137,7 @@ class TemporalStabaliser:
             for image in tracker_images:
                 cv2.imshow("BoxMot",image)
                 cv2.waitKey(0)
-            # self._mot_visualise(tracked_graphs, images, track_to_nodes)
+
         
         temporal_graph = TemporalSceneGraph(graphs=tracked_graphs)
         for nodes in track_to_nodes.values():
@@ -143,37 +147,11 @@ class TemporalStabaliser:
             instances = [tracked_graphs[node.frame_idx].objects[node.obj_idx] for node in unique_nodes]
             scene_graphs = [tracked_graphs[node.frame_idx] for node in unique_nodes]
             temporal_graph.add_link(instances=instances, scene_graphs=scene_graphs, class_=instances[0].canonical_label)
-
+        
+        self.tracker.reset()
+        
         return temporal_graph
-    # def _mot_visualise(self, graphs: list[SceneGraph], images: list[np.ndarray], track_to_nodes: dict[int, list[NodeID]]):
-    #     """Visualise the tracking results by drawing bounding boxes and track IDs on the images."""
-    #     images_with_tracks = []
-    #     for graph_idx, (scene, image) in enumerate(zip(graphs, images)):
-    #         for track_id, node_ids in track_to_nodes.items():
-    #             for node_id in node_ids:
-    #                 if node_id.frame_idx == graph_idx:
-    #                     obj = scene.objects[node_id.obj_idx]
-    #                     if isinstance(obj.bbox, BoundingBox):
-    #                         cv2.rectangle(
-    #                             image,
-    #                             (int(obj.bbox.x_min), int(obj.bbox.y_min)),
-    #                             (int(obj.bbox.x_max), int(obj.bbox.y_max)),
-    #                             (0, 255, 0),
-    #                             2,
-    #                         )
-    #                         cv2.putText(
-    #                             image,
-    #                             f"ID: {track_id}",
-    #                             (int(obj.bbox.x_min), int(obj.bbox.y_min) - 10),
-    #                             cv2.FONT_HERSHEY_SIMPLEX,
-    #                             0.5,
-    #                             (0, 255, 0),
-    #                             2,
-    #                         )
-    #         images_with_tracks.append(image)
-    #     for img in images_with_tracks:
-    #         cv2.imshow("Tracking", img)
-    #         cv2.waitKey(1)
+
     
     def align_scene_graph_ids(self, tracks: list[list[NodeID]], graphs: list[SceneGraph]) -> list[SceneGraph]:
         """Assign a persistent UUID per track and remap relationship UIDs accordingly."""

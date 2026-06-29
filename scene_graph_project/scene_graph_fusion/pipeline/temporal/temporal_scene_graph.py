@@ -94,3 +94,7 @@ class TemporalSceneGraph:
                 )
 
         return compressed_graph
+    
+    def lossy_compression(self) -> SceneGraph:
+        """Compress all frames into one graph by merging objects connected by links, but only keep the first instance of each object."""
+        

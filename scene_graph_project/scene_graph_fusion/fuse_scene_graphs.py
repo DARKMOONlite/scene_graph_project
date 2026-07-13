@@ -22,21 +22,19 @@ def get_files_in_folder(folder: Path, depth: int = 2) -> list[Path]:
 
 def main(args):
     
-    folder_a = Path(args.folder_a)
-    folder_b = Path(args.folder_b)
-    if not folder_a.is_dir():
-        print(f"folder '{folder_a.absolute()}' not found")
+    folders = args.folders
+    if len(folders) < 2:
+        print("Please provide at least two folders to fuse scene graphs from.")
         return
-    if not folder_b.is_dir():
-        print(f"folder '{folder_b.absolute()}' not found")
-        return
-    folder_a_files = sorted(get_files_in_folder(folder_a, depth=args.depth))
-    folder_b_files = sorted(get_files_in_folder(folder_b, depth=args.depth))
-    print(f"found {len(folder_a_files)} files in folder {folder_a.absolute()} and {len(folder_b_files)} files in folder {folder_b.absolute()}")
-    
-    folder_a_files_set = set(str(f) for f in folder_a_files)
-    folder_b_files_set = set(str(f) for f in folder_b_files)
-    common_files = folder_a_files_set.intersection(folder_b_files_set)
+    folders = [Path(f) for f in folders]
+    for folder in folders:
+        if not folder.is_dir():
+            print(f"folder '{folder.absolute()}' not found")
+            return
+        
+    files = [set(sorted(get_files_in_folder(folder, depth=args.depth))) for folder in folders]
+
+    common_files = set.intersection(*files)
     print(f"found {len(common_files)} common files between the two folders")
     
     if not args.output:
@@ -49,21 +47,15 @@ def main(args):
     Path(args.output).mkdir(parents=True, exist_ok=True)
     
     for filename in tqdm(common_files, desc="Fusing scene graphs"):
-        sg_a = load_scene_graph_json(folder_a / filename, source=str(folder_a / filename))
-        sg_b = load_scene_graph_json(folder_b / filename, source=str(folder_b / filename))
-
-        # 2. Standardise language across both graphs
         
-        std.standardise(sg_a)
-        std.standardise(sg_b)
-        std.blacklist(sg_a)
-        std.blacklist(sg_b)
+        scene_graphs = [load_scene_graph_json(folder / filename, source=str(folder / filename)) for folder in folders]
+        for sg in scene_graphs:
+            std.standardise(sg)
+            std.blacklist(sg)
 
         # 3. Fuse into a single graph
-        
-        merged = fusion.fuse([sg_a, sg_b])
+        merged = fusion.fuse(scene_graphs)
 
-        std.blacklist(merged)
         # 4. Export the result
         save_scene_graph_json(merged, Path(args.output) / filename)
         if args.visualise:
@@ -76,10 +68,7 @@ if __name__ == "__main__":
     install_wordnet()
     
     parser = ArgumentParser(description="Run the scene graph fusion pipeline on example data.")
-    parser.add_argument("folder_a", type=str, default="/mnt/sda1/Datasets/nuscenes/v1.0-mini/scene_graphs/react++",
-                        help="Path to JSON file with detections from model A.")
-    parser.add_argument("folder_b", type=str, default="/mnt/sda1/Datasets/nuscenes/v1.0-mini/scene_graphs/reltr",
-                        help="Path to JSON file with detections from model B.")
+    parser.add_argument("folders",type=str,nargs="+",help="folders to fuse scene graphs from")
     parser.add_argument("-d","--depth", type=int, default=2, help="folder depth to traverse for scene graph JSON files (default: 2)")
     parser.add_argument("-o","--output",help="folder to save the merged graphs to",type=str,default = "merged_graphs")
     parser.add_argument("--iou_threshold", type=float, default=0.3, help="IoU threshold for bounding box matching during fusion (default: 0.3)")

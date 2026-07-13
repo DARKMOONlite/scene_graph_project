@@ -90,7 +90,12 @@ class Standardiser:
         spacy_model: str = "en_core_web_sm",
         blacklist: set[str] | None = None,
     ):
-        self.nlp = spacy.load(spacy_model)
+        try:
+            self.nlp = spacy.load(spacy_model)
+        except OSError:
+            raise RuntimeError(
+                f"spaCy model '{spacy_model}' not found. Please install it with 'python -m spacy download {spacy_model}'."
+            )
         self.wup_threshold = wup_threshold
         self.blacklisted_labels = {label.strip().lower() for label in (blacklist or set())}
 

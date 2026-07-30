@@ -1,17 +1,17 @@
 from __future__ import annotations
 from argparse import ArgumentParser
 from pathlib import Path
+import json
 import sys
 
 ILP_PROJECT_ROOT = Path("~/Documents/phd/inductive_logic_programming/neurosymbolic_ILP").expanduser()
-SCENE_GRAPH_ROOT = Path("/mnt/sda1/Datasets/nuscenes/v1.0-mini/scene_graphs")
-SCENE_GRAPH_MODEL = "merged"
 IMAGES_ROOT = Path("/mnt/sda1/Datasets/nuscenes/v1.0-mini/")
 if str(ILP_PROJECT_ROOT) not in sys.path:
     sys.path.append(str(ILP_PROJECT_ROOT))
 
 from neurosymbolic_pipeline.database_manager import DatabaseManager
-from scene_graph_project.scene_graph_fusion.pipeline.io_formats import load_scene_graph_json, save_scene_graph_json
+from nuscenes_dev.util.windowing import build_scene_windows_by_length
+from scene_graph_project.scene_graph_fusion.pipeline.io_formats import load_scene_graph_json, scene_graph_to_dict
 from scene_graph_project.scene_graph_fusion.pipeline.temporal.temporal_stabaliser import TemporalStabaliser
 import numpy as np
 from PIL import Image
@@ -81,15 +81,6 @@ def _build_aligned_timestamp_map(image_rows: list[dict]) -> dict[tuple[str, str]
     return aligned_by_key
 
 
-def _with_aligned_timestamp(filename: str, aligned_timestamp: str) -> Path:
-    path = Path(filename)
-    stem_parts = path.stem.split("__")
-    if not stem_parts:
-        return path
-    stem_parts[-1] = aligned_timestamp
-    return path.with_name("__".join(stem_parts) + path.suffix)
-
-
 def _aligned_output_frame_path(row: dict, aligned_by_key: dict[tuple[str, str], str]) -> Path:
     filename = row["filename"]
     timestamp = row.get("timestamp")
@@ -100,7 +91,12 @@ def _aligned_output_frame_path(row: dict, aligned_by_key: dict[tuple[str, str], 
     # ponytail: keep original filename when no aligned row exists.
     if not aligned_timestamp:
         return Path(filename)
-    return _with_aligned_timestamp(str(filename), aligned_timestamp)
+    path = Path(filename)
+    stem_parts = path.stem.split("__")
+    if not stem_parts:
+        return path
+    stem_parts[-1] = aligned_timestamp
+    return path.with_name("__".join(stem_parts) + path.suffix)
 
 
 def _as_int_timestamp(value) -> int | None:
@@ -112,23 +108,92 @@ def _as_int_timestamp(value) -> int | None:
         return None
 
 
-def _build_action_result_windows(image_rows: list[dict], action_rows: list[dict]) -> tuple[list[dict], int]:
-    # Aggregate timestamps per (scene_name, section_id) using min(start)/max(end), mirroring
-    # get_scene_segment_time_ranges, so output filenames match the exs folder naming convention.
-    section_ranges: dict[tuple[str, int], list[int]] = {}  # (scene_name, section_id) -> [min_start, max_end]
-    for row in action_rows:
-        scene_name = row.get("scene_name", "")
-        section_id = row.get("section_id")
-        start_ts = _as_int_timestamp(row.get("start_aligned_timestamp"))
-        end_ts = _as_int_timestamp(row.get("end_aligned_timestamp"))
-        if start_ts is None or end_ts is None or not scene_name or section_id is None:
-            continue
-        key = (scene_name, int(section_id))
-        if key not in section_ranges:
-            section_ranges[key] = [start_ts, end_ts]
-        else:
-            section_ranges[key][0] = min(section_ranges[key][0], start_ts)
-            section_ranges[key][1] = max(section_ranges[key][1], end_ts)
+def _validate_window_overlap(size: int, overlap: int, size_flag: str, overlap_flag: str) -> None:
+    if size < 1:
+        raise ValueError(f"{size_flag} must be at least 1")
+    if overlap < 0:
+        raise ValueError(f"{overlap_flag} must be at least 0")
+    if overlap >= size:
+        raise ValueError(f"{overlap_flag} must be smaller than {size_flag}")
+
+
+def _normalised_entity_prefix(raw_label: str) -> str:
+    label = raw_label.split("_", 1)[0] if "_" in raw_label else raw_label
+    label = label.strip().lower()
+    return label or "object"
+
+
+def save_scene_graph(graph, output_path: Path) -> None:
+    data = scene_graph_to_dict(graph)
+    instance_token = output_path.stem
+    for obj in data.get("objects", []):
+        label = _normalised_entity_prefix(str(obj.get("label", "") or ""))
+        scene_graph_id = obj.get("id", "")
+        obj["force_label"] = f"{label}_{scene_graph_id}_{instance_token}"
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(output_path, "w") as f:
+        json.dump(data, f, indent=2)
+
+
+def _resolve_scene_graph_path(args, frame_path: Path) -> Path | None:
+    graph_rel_path = frame_path.with_suffix(".json")
+    if not frame_path.parts:
+        return args.input_folder / graph_rel_path if args.input_folder is not None else None
+
+    source = frame_path.parts[0]
+    if source == "samples":
+        if args.samples_folder is not None:
+            return args.samples_folder / Path(*frame_path.parts[1:]).with_suffix(".json")
+        if args.input_folder is not None:
+            return args.input_folder / graph_rel_path
+        return None
+    if source == "sweeps":
+        if args.sweeps_folder is not None:
+            return args.sweeps_folder / Path(*frame_path.parts[1:]).with_suffix(".json")
+        if args.input_folder is not None:
+            return args.input_folder / graph_rel_path
+        return None
+
+    if args.input_folder is not None:
+        return args.input_folder / graph_rel_path
+    if args.samples_folder is not None:
+        return args.samples_folder / graph_rel_path
+    if args.sweeps_folder is not None:
+        return args.sweeps_folder / graph_rel_path
+    return None
+
+
+def _relative_parent_for_output(args, graph_path: Path) -> Path:
+    if args.samples_folder is not None:
+        try:
+            return graph_path.parent.relative_to(args.samples_folder)
+        except ValueError:
+            pass
+    if args.input_folder is not None:
+        try:
+            return graph_path.parent.relative_to(args.input_folder / "samples")
+        except ValueError:
+            pass
+    return graph_path.parent
+
+
+def _build_action_result_windows(
+    db: DatabaseManager,
+    image_rows: list[dict],
+    window_length: int,
+    window_overlap: int,
+) -> tuple[list[dict], int]:
+    scene_windows = build_scene_windows_by_length(
+        db=db,
+        window_length=window_length,
+        window_overlap=window_overlap,
+    )
+    window_ranges: list[tuple[str, int, int]] = []
+    for scene_name, windows in scene_windows.items():
+        for window in windows:
+            start_ts = min(segment.start_ts for segment in window.segments)
+            end_ts = max(segment.end_ts for segment in window.segments)
+            window_ranges.append((scene_name, start_ts, end_ts))
 
     rows_by_channel: dict[str, list[tuple[int, dict]]] = {}
     for row in image_rows:
@@ -141,7 +206,7 @@ def _build_action_result_windows(image_rows: list[dict], action_rows: list[dict]
     windows: list[dict] = []
     for channel, ts_rows in rows_by_channel.items():
         ts_rows.sort(key=lambda item: item[0])
-        for (scene_name, _section_id), (start_ts, end_ts) in sorted(section_ranges.items()):
+        for scene_name, start_ts, end_ts in window_ranges:
             window_rows = [row for aligned_ts, row in ts_rows if start_ts <= aligned_ts <= end_ts]
             if not window_rows:
                 continue
@@ -154,17 +219,23 @@ def _build_action_result_windows(image_rows: list[dict], action_rows: list[dict]
                     "rows": window_rows,
                 }
             )
-    return windows, len(section_ranges)
+    return windows, len(window_ranges)
 
 
 def main(args):
-    if not args.use_action_result_timestamps:
-        if args.sample_window_size < 2:
-            raise ValueError("--sample-window-size must be at least 2")
-        if args.sample_overlap < 0:
-            raise ValueError("--sample-overlap must be at least 0")
-        if args.sample_overlap >= args.sample_window_size:
-            raise ValueError("--sample-overlap must be smaller than --sample-window-size")
+    if args.input_folder is None and args.samples_folder is None and args.sweeps_folder is None:
+        raise ValueError("Provide at least one of --input_folder, --samples-folder, or --sweeps-folder")
+    if args.input_folder is not None and not args.input_folder.exists():
+        raise FileNotFoundError(f"Input folder does not exist: {args.input_folder}")
+    if args.samples_folder is not None and not args.samples_folder.exists():
+        raise FileNotFoundError(f"Samples folder does not exist: {args.samples_folder}")
+    if args.sweeps_folder is not None and not args.sweeps_folder.exists():
+        raise FileNotFoundError(f"Sweeps folder does not exist: {args.sweeps_folder}")
+
+    if args.use_action_result_timestamps:
+        _validate_window_overlap(args.window_length, args.window_overlap, "--window-length", "--window-overlap")
+    else:
+        _validate_window_overlap(args.sample_window_size, args.sample_overlap, "--sample-window-size", "--sample-overlap")
 
     standardiser = Standardiser(blacklist=OBJECT_BLACKLIST)
     temporal_stabaliser = TemporalStabaliser()
@@ -173,11 +244,15 @@ def main(args):
     timestamp_to_aligned_timestamp_map = _build_aligned_timestamp_map(image_rows)
     window_specs: list[dict] = []
     if args.use_action_result_timestamps:
-        action_rows = db.get_rows("action_results")
-        window_specs, unique_range_count = _build_action_result_windows(image_rows, action_rows)
+        window_specs, unique_range_count = _build_action_result_windows(
+            db=db,
+            image_rows=image_rows,
+            window_length=args.window_length,
+            window_overlap=args.window_overlap,
+        )
         print(
             f"Found {len(window_specs)} camera windows from action_results "
-            f"({unique_range_count} unique sections)"
+            f"({unique_range_count} unique windows)"
         )
     else:
         tracks = _build_tracks(image_rows)
@@ -190,14 +265,14 @@ def main(args):
             )
             if not windows:
                 continue
-            for window_idx, window_rows in enumerate(windows, start=1):
-                window_specs.append(
-                    {
-                        "track_idx": track_idx,
-                        "window_idx": window_idx,
-                        "rows": window_rows,
-                    }
-                )
+            window_specs.extend(
+                {
+                    "track_idx": track_idx,
+                    "window_idx": window_idx,
+                    "rows": window_rows,
+                }
+                for window_idx, window_rows in enumerate(windows, start=1)
+            )
 
     total_windows = 0
     for idx, window_spec in enumerate(window_specs, start=1):
@@ -220,11 +295,18 @@ def main(args):
         image_arrays: list[np.ndarray] = []
         skip_window = False
         for frame_idx, frame_path in enumerate(frame_paths):
-            parts = list(frame_path.parts)
-            parts.insert(1, SCENE_GRAPH_MODEL)
-            graph_rel_path = Path(*parts).with_suffix(".json")
-            scene_graph_path = SCENE_GRAPH_ROOT / graph_rel_path
+            graph_rel_path = frame_path.with_suffix(".json")
+            is_sweep_frame = bool(frame_path.parts) and frame_path.parts[0] == "sweeps"
+            scene_graph_path = _resolve_scene_graph_path(args, frame_path)
+            if scene_graph_path is None:
+                if is_sweep_frame:
+                    continue
+                print(f"Skipping window {idx}: no configured scene-graph folder for {frame_path}")
+                skip_window = True
+                break
             if not scene_graph_path.exists():
+                if is_sweep_frame:
+                    continue
                 print(f"Skipping window {idx}: missing scene graph {scene_graph_path}")
                 skip_window = True
                 break
@@ -237,11 +319,6 @@ def main(args):
             scene_graph = load_scene_graph_json(scene_graph_path, source=str(graph_rel_path))
             scene_graphs.append(filter_scene_graph(scene_graph, standardiser))
             image_arrays.append(np.array(Image.open(image_path)))
-            if frame_idx == 0 or frame_idx == len(frame_paths) - 1:
-                print(
-                    f"Window {idx}/{len(window_specs)} frame {frame_idx}: {frame_path} | "
-                    f"objects={len(scene_graph.objects)}, relationships={len(scene_graph.relationships)}"
-                )
         if skip_window or not scene_graphs:
             continue
 
@@ -265,22 +342,13 @@ def main(args):
                 first_graph_path = scene_graph_paths[0]
                 first_output_frame_path = _aligned_output_frame_path(window_rows[0], timestamp_to_aligned_timestamp_map)
                 last_output_frame_path = _aligned_output_frame_path(window_rows[-1], timestamp_to_aligned_timestamp_map)
-                first_output_graph_rel_path = Path(
-                    *([*first_output_frame_path.parts[:1], SCENE_GRAPH_MODEL, *first_output_frame_path.parts[1:]])
-                ).with_suffix(".json")
-                last_output_graph_rel_path = Path(
-                    *([*last_output_frame_path.parts[:1], SCENE_GRAPH_MODEL, *last_output_frame_path.parts[1:]])
-                ).with_suffix(".json")
-                first_output_graph_path = SCENE_GRAPH_ROOT / first_output_graph_rel_path
-                last_output_graph_path = SCENE_GRAPH_ROOT / last_output_graph_rel_path
-                try:
-                    relative_parent = first_graph_path.parent.relative_to(SCENE_GRAPH_ROOT / "samples" / SCENE_GRAPH_MODEL)
-                except ValueError:
-                    relative_parent = first_graph_path.parent
+                first_output_graph_path = _resolve_scene_graph_path(args, first_output_frame_path) or first_output_frame_path.with_suffix(".json")
+                last_output_graph_path = _resolve_scene_graph_path(args, last_output_frame_path) or last_output_frame_path.with_suffix(".json")
+                relative_parent = _relative_parent_for_output(args, first_graph_path)
                 output_path = Path(args.output_folder) / relative_parent / _compressed_name(
                     first_output_graph_path, last_output_graph_path
                 )
-            save_scene_graph_json(compressed_graph, output_path)
+            save_scene_graph(compressed_graph, output_path)
             print(f"Saved compressed graph to: {output_path}")
         if args.visualise:
             compressed_graph.visualise()
@@ -288,13 +356,49 @@ def main(args):
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    # parser.add_argument("--input_folder", type=Path, required=True, help="Path to the input folder containing scene graphs")
+
+    parser.add_argument(
+        "-i",
+        "--input_folder",
+        type=Path,
+        help="Path to a root folder containing scene graphs under samples/ and sweeps/",
+    )
+    parser.add_argument(
+        "--samples-folder",
+        type=Path,
+        help="Path to scene graphs for sample frames (e.g. .../samples).",
+    )
+    parser.add_argument(
+        "--sweeps-folder",
+        type=Path,
+        help="Path to scene graphs for sweep frames (e.g. .../sweeps). Optional.",
+    )
+    parser.add_argument(
+        "-o",
+        "--output_folder",
+        type=Path,
+        required=True,
+        help="Folder to write compressed graphs",
+    )
+
     parser.add_argument("-v","--visualise", action="store_true", help="Visualise the tracking results")
     parser.add_argument("--save", action="store_true", help="Save each compressed graph as JSON")
     parser.add_argument(
         "--use-action-result-timestamps",
         action="store_true",
         help="Use unique start/end aligned timestamps from action_results and build per-camera windows (inclusive)",
+    )
+    parser.add_argument(
+        "--window-length",
+        type=int,
+        default=1,
+        help="Number of adjacent action sections to combine into one window (used with --use-action-result-timestamps).",
+    )
+    parser.add_argument(
+        "--window-overlap",
+        type=int,
+        default=0,
+        help="Overlapping sections between consecutive action windows (used with --use-action-result-timestamps).",
     )
     parser.add_argument(
         "--sample-window-size",
@@ -308,6 +412,5 @@ if __name__ == "__main__":
         default=1,
         help="How many sample images consecutive windows share (ignored with --use-action-result-timestamps)",
     )
-    parser.add_argument("-o", "--output_folder", type=Path, default=Path("stabalised_graphs"), help="Folder to write compressed graphs")
     args = parser.parse_args()
     main(args)

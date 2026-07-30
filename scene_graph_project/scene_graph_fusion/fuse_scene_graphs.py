@@ -69,8 +69,8 @@ if __name__ == "__main__":
     
     parser = ArgumentParser(description="Run the scene graph fusion pipeline on example data.")
     parser.add_argument("folders",type=str,nargs="+",help="folders to fuse scene graphs from")
-    parser.add_argument("-d","--depth", type=int, default=2, help="folder depth to traverse for scene graph JSON files (default: 2)")
     parser.add_argument("-o","--output",help="folder to save the merged graphs to",type=str,default = "merged_graphs")
+    parser.add_argument("-d","--depth", type=int, default=2, help="folder depth to traverse for scene graph JSON files (default: 2)")
     parser.add_argument("--iou_threshold", type=float, default=0.3, help="IoU threshold for bounding box matching during fusion (default: 0.3)")
     parser.add_argument("--wup_threshold", type=float, default=0.85, help="Wu-Palmer similarity threshold for label merging during standardisation (default: 0.85)")
     parser.add_argument("--visualise", action="store_true", help="Visualise the scene graphs before and after fusion")

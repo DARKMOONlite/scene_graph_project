@@ -89,6 +89,7 @@ class Standardiser:
         wup_threshold: float = 0.8,
         spacy_model: str = "en_core_web_sm",
         blacklist: set[str] | None = None,
+        relationship_blacklist: set[str] | None = None,
     ):
         try:
             self.nlp = spacy.load(spacy_model)
@@ -98,6 +99,7 @@ class Standardiser:
             )
         self.wup_threshold = wup_threshold
         self.blacklisted_labels = {label.strip().lower() for label in (blacklist or set())}
+        self.blacklisted_relationships = {label.strip().lower() for label in (relationship_blacklist or set())}
 
         # label → canonical label
         self._label_map: dict[str, str] = {}
@@ -140,6 +142,11 @@ class Standardiser:
             rel
             for rel in graph.relationships
             if rel.subject_uid not in removed_object_ids and rel.object_uid not in removed_object_ids
+        ]
+        graph.relationships = [ #? remove the blacklisted relationships
+            rel
+            for rel in graph.relationships
+            if rel.canonical_predicate not in self.blacklisted_relationships and rel.predicate not in self.blacklisted_relationships
         ]
         return graph
     

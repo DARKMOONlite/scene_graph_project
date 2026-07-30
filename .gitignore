@@ -9,3 +9,5 @@ data
 *.pyc
 *.db
 *.csv
+
+build/

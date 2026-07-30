@@ -26,6 +26,41 @@ OBJECT_BLACKLIST: set[str] = {
     "build",
     "leaf",
     "fence",
+    "bench",
+    "bush",
+    "wire",
+    "ground",
+    "background",
+    "store",
+    "tire",
+    "light",
+    "line",
+    "leg",
+    "pant",
+    "shoe",
+    "shirt",
+    "short",
+    "jacket",
+    "hat",
+    "door",
+    "city",
+    "camera",
+    "wheel",
+    "windshield",
+    "wing",
+    "wiper",
+    "tile",
+}
+
+RELATIONSHIP_BLACKLIST: set[str] = {
+    "attach_on",
+    "holding",
+    "paint_in",
+    "show",
+    "make_of",
+    "lift_up",
+    "lean_on",
+    "wearing",
     
 }
 
@@ -55,9 +90,9 @@ def output_paths_for(
     return paths
 
 
-def process_folder(input_root: Path, output_root: Path) -> int:
+def process_folder(input_root: Path, output_root: Path, blacklist: set[str], relationship_blacklist: set[str]) -> int:
     """Process all JSON files under *input_root* and write filtered graphs to *output_root*."""
-    standardiser = Standardiser(blacklist=OBJECT_BLACKLIST)
+    standardiser = Standardiser(blacklist=blacklist, relationship_blacklist=relationship_blacklist)
     processed_graphs = 0
 
     for input_path in tqdm(collect_scene_graph_files(input_root), desc="Processing scene graphs"):
@@ -77,6 +112,8 @@ def main() -> None:
     parser = ArgumentParser(description="Standardise and blacklist scene-graph JSON files in a folder tree.")
     parser.add_argument("input_root", type=Path, help="Root folder containing scene graph JSON files.")
     parser.add_argument("output_root", type=Path, help="Destination folder for filtered scene graph JSON files.")
+    parser.add_argument("--blacklist", nargs="+", type=str, help=f"object labels to blacklist (default: {OBJECT_BLACKLIST})", default=OBJECT_BLACKLIST)
+    parser.add_argument("--relationship_blacklist", nargs="+", type=str, help=f"relationship labels to blacklist (default: {RELATIONSHIP_BLACKLIST})", default=RELATIONSHIP_BLACKLIST)
     args = parser.parse_args()
 
     install_wordnet()
@@ -85,7 +122,7 @@ def main() -> None:
         raise NotADirectoryError(f"input folder '{args.input_root}' not found")
 
     args.output_root.mkdir(parents=True, exist_ok=True)
-    processed_graphs = process_folder(args.input_root, args.output_root)
+    processed_graphs = process_folder(args.input_root, args.output_root, set(args.blacklist), set(args.relationship_blacklist))
     print(f"filtered {processed_graphs} scene graph(s)")
 
 

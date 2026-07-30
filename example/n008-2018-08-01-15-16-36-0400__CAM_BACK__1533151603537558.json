@@ -1,0 +1,168 @@
+{
+  "url": "/mnt/sda1/Datasets/nuscenes/v1.0-mini/samples/CAM_BACK/n008-2018-08-01-15-16-36-0400__CAM_BACK__1533151603537558.jpg",
+  "objects": [
+    {
+      "name": "road",
+      "bbox": [
+        0,
+        477,
+        1599,
+        900
+      ],
+      "score": 0.8895283937454224
+    },
+    {
+      "name": "building",
+      "bbox": [
+        0,
+        7,
+        1600,
+        531
+      ],
+      "score": 0.8481609225273132
+    },
+    {
+      "name": "sky",
+      "bbox": [
+        0,
+        0,
+        1599,
+        413
+      ],
+      "score": 0.8395439386367798
+    },
+    {
+      "name": "car",
+      "bbox": [
+        800,
+        479,
+        885,
+        546
+      ],
+      "score": 0.8292274475097656
+    },
+    {
+      "name": "car",
+      "bbox": [
+        927,
+        475,
+        1013,
+        537
+      ],
+      "score": 0.8051023483276367
+    },
+    {
+      "name": "fence",
+      "bbox": [
+        0,
+        440,
+        1592,
+        839
+      ],
+      "score": 0.5097386240959167
+    },
+    {
+      "name": "pavement",
+      "bbox": [
+        1,
+        799,
+        1596,
+        900
+      ],
+      "score": 0.18951258063316345
+    },
+    {
+      "name": "pavement",
+      "bbox": [
+        0,
+        492,
+        1598,
+        900
+      ],
+      "score": 0.1713172197341919
+    }
+  ],
+  "attributes": [],
+  "relationships": [
+    {
+      "predicate": "over",
+      "subject": 2,
+      "object": 1
+    },
+    {
+      "predicate": "driving on",
+      "subject": 3,
+      "object": 0
+    },
+    {
+      "predicate": "driving on",
+      "subject": 4,
+      "object": 0
+    },
+    {
+      "predicate": "over",
+      "subject": 2,
+      "object": 0
+    },
+    {
+      "predicate": "over",
+      "subject": 2,
+      "object": 3
+    },
+    {
+      "predicate": "over",
+      "subject": 2,
+      "object": 4
+    },
+    {
+      "predicate": "over",
+      "subject": 2,
+      "object": 5
+    },
+    {
+      "predicate": "attached to",
+      "subject": 7,
+      "object": 0
+    },
+    {
+      "predicate": "attached to",
+      "subject": 6,
+      "object": 0
+    },
+    {
+      "predicate": "beside",
+      "subject": 5,
+      "object": 0
+    },
+    {
+      "predicate": "beside",
+      "subject": 1,
+      "object": 0
+    },
+    {
+      "predicate": "enclosing",
+      "subject": 5,
+      "object": 1
+    },
+    {
+      "predicate": "in front of",
+      "subject": 3,
+      "object": 4
+    },
+    {
+      "predicate": "in front of",
+      "subject": 4,
+      "object": 3
+    },
+    {
+      "predicate": "over",
+      "subject": 2,
+      "object": 6
+    },
+    {
+      "predicate": "over",
+      "subject": 2,
+      "object": 7
+    }
+  ]
+}

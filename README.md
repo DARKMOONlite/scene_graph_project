@@ -1,69 +1,66 @@
 # scene_graph_project
 A project for creating useful spatial scene graphs from images. 
 
-## TODO 
-- Ego Centric Scene graph (change the perspective of the scene graph to a specific point within the scene)
-   - [VLM-Grounder](https://github.com/InternRobotics/VLM-Grounder)
-   - [VIZOR](https://vivekmadhavaram.github.io/vizor/)
-   - [Vil3DRel](https://arxiv.org/pdf/2211.09646)
-
-
 
 ## Data sets
+### Tested:
+- [**NuScenes**](https://www.nuscenes.org/): `Tested`: A driving centric dataset containing multiple camera perspectives and highly annotated images.
+- [**Visual Genome**](https://homes.cs.washington.edu/~ranjay/visualgenome/index.html):`Tested` an ongoing effort to connect structured image concepts to language
 
-- [**Visual Genome**](https://homes.cs.washington.edu/~ranjay/visualgenome/index.html): an ongoing effort to connect structured image concepts to language
+### Untested:
 - [**ConceptNET**](https://conceptnet.io/): semantic network, designed to help computers understand the meanings of words that people use.
-- [**Atomic20/20**](https://github.com/allenai/comet-atomic-2020):
 - [**CLEVR**](https://cs.stanford.edu/people/jcjohns/clevr/): a diagnostic dataset that tests a range of visual reasoning abilities
-- [Ego4D](https://ego4d-data.org/)
-### Car Centric Datasets:
-- [BDD-X](https://github.com/JinkyuKimUCB/BDD-X-dataset)
-## Rule Mining Links
-
-- [**SAFRAN**](https://github.com/OpenBioLink/SAFRAN): Scalable and fast non-redundant rule application
-- [**AnyBURL**](https://web.informatik.uni-mannheim.de/AnyBURL/): rule learner AnyBURL (Anytime Bottom Up Rule Learning). AnyBURL has been designed for the use case of knowledge base completion, however, it can also be applied to any other use case where rules are helpful.
-- [**pyClause**](https://github.com/symbolic-kg/PyClause): a library for easy and efficient usage and learning of symbolic knowledge graph rules
-```bash
-pip install git+https://github.com/symbolic-kg/PyClause.git
-```
+- [**Ego4D**](https://ego4d-data.org/): Driving dataset
+- [**BDD-X**](https://github.com/JinkyuKimUCB/BDD-X-dataset): Driving Dataset
 
 
-## Setting up python
+
+## Installation
 
 ```bash
-conda activate {env name}
-pip install -e . 
+
+pip install .
+
 ```
 
+## Usage
 
+### Fusion
 
+ ```bash
+python3 scene_graph_project/scene_graph_fusion/fuse_scene_graphs.py \
+ {any number of folders}\
+ -o {output folder}\
 
+ ```
 
+### Stabalise Nuscenes 
+> [!NOTE]
+> this requires the nuscenes dataset loaded into a sqlite3 db. I've added the databasemanager class and some utility to make it easier to use.
+
+```bash
+cene_graph_project/scene_graph_fusion//stabalise_scene_graphs.py --save -o /mnt/sda1/Datasets/nuscenes/v1.0-mini/scene_graphs/stabalised_graphs_action2 --samples-folder /mnt/sda1/Datasets/nuscenes/v1.0-mini/scene_graphs/samples/merged/ --sweeps-folder /mnt/sda1/Datasets/nuscenes/v1.0-mini/scene_graphs/sweeps/merged/
+```
+
+### View Scene Graph
+
+```bash
+python3 scene_graph_project/scene_graph_fusion/view_scene_graphs.py {scene graph path}
+```
 
 ## Interesting Links
 [**Scallop Interpreting over Graphs**](https://www.scallop-lang.org/log22/slides/log-2022-tutorial-scallop-part.pdf)
 
 
-## The Idea
-1. Copy [REGNUM](https://github.com/armitakhn/REGNUM) as a baseline
-   a. test on specifically positional datasets where we take basic predicates like `near`, `far`, `in_contact` etc and convert them into more complex predicates like `wearing`, `holding`,`riding`,`throwing` etc. Because of this we actually can delimit our range for predicates to a positional subset, but how can we do that?  
-3. see what needs to be changed or updated
-4. make modifications like
-  a. soft bounds through distributions
-  b.   
+## TODO
 
-### Diagram
-```mermaid
-    graph TD;
-    A[Image]-->B;
-    B{Semantic Segmentation}-->C;
-    C[Objects and Positions]-->D;
-    D{Grounding of Concepts}-->E;
-    E[Proto-Scene Graph]-->F;
-    F{Commonsense Scallop Rules} --> G;
-    G[Enhansed Scene Graph]-->H;
-    H{Domain Specific Scallop Rules}-->I;
-    I[Domain-Grounded Scene Graph]
+#### - Conversion of Ego-centric, Allo-centric and Exo-centric scene graphs.
+   - [VLM-Grounder](https://github.com/InternRobotics/VLM-Grounder)
+   - [VIZOR](https://vivekmadhavaram.github.io/vizor/)
+   - [Vil3DRel](https://arxiv.org/pdf/2211.09646)
+
+#### - Scene Graph specific MOT (Multi Object Tracking)
 
 
-```
+
+

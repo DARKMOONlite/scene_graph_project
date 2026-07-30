@@ -39,7 +39,10 @@ python3 scene_graph_project/scene_graph_fusion/fuse_scene_graphs.py \
 > this requires the nuscenes dataset loaded into a sqlite3 db. I've added the databasemanager class and some utility to make it easier to use.
 
 ```bash
-cene_graph_project/scene_graph_fusion//stabalise_scene_graphs.py --save -o /mnt/sda1/Datasets/nuscenes/v1.0-mini/scene_graphs/stabalised_graphs_action2 --samples-folder /mnt/sda1/Datasets/nuscenes/v1.0-mini/scene_graphs/samples/merged/ --sweeps-folder /mnt/sda1/Datasets/nuscenes/v1.0-mini/scene_graphs/sweeps/merged/
+python3 scene_graph_project/scene_graph_fusion//stabalise_scene_graphs.py \
+--save -o /mnt/sda1/Datasets/nuscenes/v1.0-mini/scene_graphs/stabalised_graphs_action2 \
+ --samples-folder /mnt/sda1/Datasets/nuscenes/v1.0-mini/scene_graphs/samples/merged/ \
+  --sweeps-folder /mnt/sda1/Datasets/nuscenes/v1.0-mini/scene_graphs/sweeps/merged/
 ```
 
 ### View Scene Graph

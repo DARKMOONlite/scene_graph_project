@@ -17,6 +17,7 @@ dependencies = [
 	'nltk',
 	'ortools',
 	'boxmot',
+	'numpy < 2.0', 
 
 ]
 

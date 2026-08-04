@@ -215,7 +215,7 @@ class SceneGraphFusion:
                 predicate=min(relationship.predicate for relationship in relationships),
                 object_uid=object_uid,
                 canonical_predicate=canonical_predicate,
-                confidence=self.merge_confidences([relationship.confidence for relationship in relationships]),
+                confidence=self._merge_confidences([relationship.confidence for relationship in relationships]),
                 source=_join_sources(
                     *(relationship.source for relationship in relationships)
                 ),
@@ -291,7 +291,7 @@ class SceneGraphFusion:
             label=primary.label, # take the label from the most confident object
             bbox=self._merge_bboxes(objects),
             attributes=sorted({attribute for obj in objects for attribute in obj.attributes}),
-            confidence=self.merge_confidences(objects),
+            confidence=self._merge_confidences([obj.confidence for obj in objects]),
             source=_join_sources(*(obj.source for obj in objects)),
             canonical_label=max(objects, key=lambda obj: obj.confidence).canonical_label,
             uid=min((obj.uid for obj in objects), key=str),
@@ -331,21 +331,21 @@ class SceneGraphFusion:
             x_max=sum(bbox.x_max for bbox in bboxes) / len(bboxes),
             y_max=sum(bbox.y_max for bbox in bboxes) / len(bboxes),
         )
-    def merge_confidences(self, objects: list[SceneObject]) -> float:
+    def _merge_confidences(self, confs: list[float]) -> float:
         """Calculate the confidence of a merged object from its constituent objects.
 
-        If `inverse` is True, the confidence is calculated as the inverse of the product of the inverse confidences of its constituent objects.
-        e.g. 2 objects with confidence 90% would result in a merged confidence of 99% (1 - (1-0.9)*(1-0.9) = 0.99). If `inverse` is False, the confidence is simply the maximum confidence of the constituent objects.
+        If `inverse_confidence_calculation` is True, the confidence is calculated as the inverse of the product of the inverse confidences of its constituent objects.
+        e.g. 2 objects with confidence 90% would result in a merged confidence of 99% (1 - (1-0.9)*(1-0.9) = 0.99). If `inverse_confidence_calculation` is False, the confidence is simply the maximum confidence of the constituent objects.
         """
-        if not objects:
+        if not confs:
             return 0.0
         if self.config.inverse_confidence_calculation:
             product_inverse_confidence = 1.0
-            for obj in objects:
-                product_inverse_confidence *= (1.0 - obj.confidence)
+            for conf in confs:
+                product_inverse_confidence *= (1.0 - conf)
             return 1.0 - product_inverse_confidence
         else:
-            return max(obj.confidence for obj in objects)
+            return max(confs)
 
 def _join_sources(*sources: str) -> str:
     """Combine source name strings, deduplicating."""

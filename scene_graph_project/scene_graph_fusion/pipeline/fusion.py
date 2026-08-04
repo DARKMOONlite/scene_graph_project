@@ -40,9 +40,12 @@ class FusionConfig:
     """When ``True``, objects from different sources can only be matched if
     their bounding boxes overlap above ``iou_threshold``.  Set to ``False``
     for sources that don't supply bounding boxes."""
-
-    prefer_higher_confidence: bool = True
-    """When merging, prefer the label with the higher confidence score."""
+    
+    #TODO think of better name
+    inverse_confidence_calculation: bool = False 
+    """When ``True``, the confidence of a merged object is calculated as the
+    inverse of the product of the inverse confidences of its constituent objects.
+    """
     
     label_set: set[str] | None = None
     """Optional set of allowed canonical labels. If provded, the merged scene_graph will only contain objects whose canonical label is in this set. This can be used to enforce a consistent label space across sources."""
@@ -212,7 +215,7 @@ class SceneGraphFusion:
                 predicate=min(relationship.predicate for relationship in relationships),
                 object_uid=object_uid,
                 canonical_predicate=canonical_predicate,
-                confidence=max(relationship.confidence for relationship in relationships),
+                confidence=self.merge_confidences([relationship.confidence for relationship in relationships]),
                 source=_join_sources(
                     *(relationship.source for relationship in relationships)
                 ),
@@ -283,21 +286,14 @@ class SceneGraphFusion:
 
     def _merge_objects(self, objects: list[SceneObject]) -> SceneObject:
         """Merge a matched object group, calculating aggregate fields once."""
-        primary = min(
-            objects,
-            key=lambda obj: (
-                -obj.confidence if self.config.prefer_higher_confidence else 0,
-                self._object_key(obj),
-            ),
-        )
-
+        primary=max(objects, key=lambda obj: obj.confidence)
         return SceneObject(
-            label=primary.label,
+            label=primary.label, # take the label from the most confident object
             bbox=self._merge_bboxes(objects),
             attributes=sorted({attribute for obj in objects for attribute in obj.attributes}),
-            confidence=max(obj.confidence for obj in objects),
+            confidence=self.merge_confidences(objects),
             source=_join_sources(*(obj.source for obj in objects)),
-            canonical_label=primary.canonical_label,
+            canonical_label=max(objects, key=lambda obj: obj.confidence).canonical_label,
             uid=min((obj.uid for obj in objects), key=str),
         )
 
@@ -335,7 +331,21 @@ class SceneGraphFusion:
             x_max=sum(bbox.x_max for bbox in bboxes) / len(bboxes),
             y_max=sum(bbox.y_max for bbox in bboxes) / len(bboxes),
         )
+    def merge_confidences(self, objects: list[SceneObject]) -> float:
+        """Calculate the confidence of a merged object from its constituent objects.
 
+        If `inverse` is True, the confidence is calculated as the inverse of the product of the inverse confidences of its constituent objects.
+        e.g. 2 objects with confidence 90% would result in a merged confidence of 99% (1 - (1-0.9)*(1-0.9) = 0.99). If `inverse` is False, the confidence is simply the maximum confidence of the constituent objects.
+        """
+        if not objects:
+            return 0.0
+        if self.config.inverse_confidence_calculation:
+            product_inverse_confidence = 1.0
+            for obj in objects:
+                product_inverse_confidence *= (1.0 - obj.confidence)
+            return 1.0 - product_inverse_confidence
+        else:
+            return max(obj.confidence for obj in objects)
 
 def _join_sources(*sources: str) -> str:
     """Combine source name strings, deduplicating."""

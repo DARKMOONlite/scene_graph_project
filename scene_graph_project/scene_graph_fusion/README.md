@@ -56,6 +56,25 @@ save_scene_graph_json(merged, "merged_graph.json")
 print(merged.summary())
 ```
 
+## Comparing two scene graphs
+
+Use the same standardisation and fusion matching configuration to report
+shared and unique objects and relationships:
+
+```bash
+python3 scene_graph_project/scene_graph_fusion/compare_scene_graphs.py \
+  graph_a.json graph_b.json
+```
+or 
+
+```bash
+python3 scene_graph_project/scene_graph_fusion/compare_scene_graphs.py \
+  /path/to/graphs_a /path/to/graphs_b
+```
+The script prints the number of objects/relationships in each graph (or all of them), howmany of each existed in both and how many were seemingly unique to each graph, uses the same `--iou-threshold` and `--wup-threshold` parameters to tune how loose to check.
+
+
+
 ## Key classes
 
 | Class | Purpose |

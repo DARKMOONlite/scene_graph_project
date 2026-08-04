@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 
 from scene_graph_project.scene_graph_fusion.pipeline.models import BoundingBox, Relationship, SceneGraph, SceneObject
 from scene_graph_project.scene_graph_fusion.pipeline.wordnet import wup_confidence
-
+from  dataclasses import astuple
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -63,7 +63,7 @@ class ObjectMatch:
     iou: float
     semantic_score: float
 
-    def track(self,other:ObjectMatch) -> bool:
+    def equals(self,other:ObjectMatch) -> bool:
         """True if this match tracks the same base object as *other*."""
         result:bool = \
         self.obj_a.uid == other.obj_a.uid or \
@@ -118,13 +118,7 @@ class SceneGraphFusion:
         """
         if not graphs:
             return SceneGraph(image_id="")
-        if len(graphs) == 1:
-            return graphs[0]
-
-        # Start with the first graph as base and fold in the rest.
-        merged = self._copy_graph(graphs[0])
-        for graph in graphs[1:]:
-            merged = self._merge_pair(merged, graph)
+        merged = self.merge_scene_graphs(graphs)
             
         if self.config.label_set is not None: # filter out objects whose canonical label is not in the allowed set
             merged.objects = [o for o in merged.objects if o.canonical_label in self.config.label_set]
@@ -135,47 +129,103 @@ class SceneGraphFusion:
         return merged
 
     # ------------------------------------------------------------------
-    # Pairwise merge
+    # Multi-graph merge
     # ------------------------------------------------------------------
     
-    def _merge_pair(self, base: SceneGraph, incoming: SceneGraph) -> SceneGraph:
-        """Merge *incoming* into *base*, returning the updated graph."""
-        matches, unmatched = self._match_objects(base.objects, incoming.objects)
+    def merge_scene_graphs(self, scene_graphs: list[SceneGraph]) -> SceneGraph:
+        """Merge all graphs in one pass so group values are order-independent."""
+        if not scene_graphs:
+            return SceneGraph(image_id="")
 
-        # uid of incoming object → uid of merged object
-        uid_remap: dict[int, int] = {}
+        objects = [
+            (graph_index, obj)
+            for graph_index, graph in enumerate(scene_graphs)
+            for obj in graph.objects
+        ]
+        parents = {obj.uid: obj.uid for _, obj in objects} # links each object to its parent in the union-find structure, this will be updated
+        graph_sets = {obj.uid: {graph_index} for graph_index, obj in objects} # links each object to the set of input graphs it represents
 
-        # --- merge matched objects ---
-        for match in matches:
-            merged_obj = self._merge_objects(match.obj_a, match.obj_b)
-            # replace the base object in-place
-            for i, obj in enumerate(base.objects):
-                if obj.uid == match.obj_a.uid:
-                    base.objects[i] = merged_obj
-                    break
-            uid_remap[match.obj_b.uid] = merged_obj.uid
+        def find(uid):
+            """
+            finds the root of the union-find structure for the given uid, and performs path compression to speed up future queries
+            """
+            while parents[uid] != uid:
+                parents[uid] = parents[parents[uid]]
+                uid = parents[uid]
+            return uid
 
-        # --- add unmatched incoming objects ---
-        for obj in unmatched:
-            base.objects.append(obj)
-            uid_remap[obj.uid] = obj.uid  # identity mapping
+        candidates: list[tuple[float, SceneObject, SceneObject]] = [] # candidates to merge that are above the threshold.
+        
+        #? compare all objects pairwise, but only consider pairs from different input graphs
+        for index, (graph_a_index, obj_a) in enumerate(objects):
+            for graph_b_index, obj_b in objects[index + 1:]:
+                # An object can only be merged with objects from other inputs.
+                if graph_a_index == graph_b_index:
+                    continue
+                iou = self._compute_iou(obj_a, obj_b)
+                semantic_score = self._semantic_similarity(obj_a, obj_b)
+                spatial_ok = (
+                    not self.config.require_spatial_overlap
+                    or iou >= self.config.iou_threshold
+                    or obj_a.bbox is None
+                    or obj_b.bbox is None
+                )
+                if spatial_ok and semantic_score >= self.config.semantic_threshold:
+                    candidates.append((iou + semantic_score, obj_a, obj_b))
 
-        # --- merge relationships ---
-        for rel in incoming.relationships:
-            new_subj = uid_remap.get(rel.subject_uid, rel.subject_uid)
-            new_obj = uid_remap.get(rel.object_uid, rel.object_uid)
-            new_rel = Relationship(
-                subject_uid=new_subj,
-                predicate=rel.predicate,
-                object_uid=new_obj,
-                canonical_predicate=rel.canonical_predicate,
-                confidence=rel.confidence,
-                source=rel.source,
+
+        #? sorts first by the score, then by the object attributes to ensure deterministic ordering. This is important for reproducibility and consistency across runs.
+        comparison = lambda candidate: (candidate[0], astuple(candidate[1]), astuple(candidate[2]))  
+        for _, obj_a, obj_b in sorted(candidates, key=comparison, reverse=True): # ponytail: global greedy matching
+            root_a, root_b = find(obj_a.uid), find(obj_b.uid)
+            if root_a == root_b or graph_sets[root_a] & graph_sets[root_b]:
+                continue
+            parents[root_b] = root_a
+            graph_sets[root_a].update(graph_sets[root_b]) # update the graph sets so that we only merge objects from different input graphs. This prevents merging objects that have already been merged with others from the same input graph.
+
+        # Aggregate each connected match group exactly once.
+        groups = {}
+        for _, obj in objects:
+            groups.setdefault(find(obj.uid), []).append(obj)
+
+        uid_remap = {}
+        merged_objects = []
+        for group in groups.values():
+            merged_obj = self._merge_objects(group)
+            merged_objects.append(merged_obj)
+            uid_remap.update({obj.uid: merged_obj.uid for obj in group})
+
+        relationship_groups = {}
+        for graph in scene_graphs:
+            for relationship in graph.relationships:
+                # Point edges at their merged endpoints before deduplicating.
+                key = (
+                    uid_remap.get(relationship.subject_uid, relationship.subject_uid),
+                    relationship.canonical_predicate,
+                    uid_remap.get(relationship.object_uid, relationship.object_uid),
+                )
+                relationship_groups.setdefault(key, []).append(relationship)
+
+        merged_relationships = [
+            Relationship(
+                subject_uid=subject_uid,
+                predicate=min(relationship.predicate for relationship in relationships),
+                object_uid=object_uid,
+                canonical_predicate=canonical_predicate,
+                confidence=max(relationship.confidence for relationship in relationships),
+                source=_join_sources(
+                    *(relationship.source for relationship in relationships)
+                ),
             )
-            if not self._has_duplicate_relationship(base.relationships, new_rel):
-                base.relationships.append(new_rel)
-
-        return base
+            for (subject_uid, canonical_predicate, object_uid), relationships
+            in sorted(relationship_groups.items(), key=lambda item: tuple(map(str, item[0])))
+        ]
+        return SceneGraph(
+            image_id=scene_graphs[0].image_id,
+            source=_join_sources(*(graph.source for graph in scene_graphs)),
+            objects=merged_objects,
+            relationships=merged_relationships,
+        )
 
     # ------------------------------------------------------------------
     # Object matching
@@ -231,29 +281,24 @@ class SceneGraphFusion:
     # Object merging
     # ------------------------------------------------------------------
 
-    def _merge_objects(self, a: SceneObject, b: SceneObject) -> SceneObject:
-        """Merge two matched SceneObjects into one.
-
-        Keeps the higher-confidence label (or the first if equal), unions
-        attributes, and takes the tighter / higher-confidence bounding box.
-        """
-        if self.config.prefer_higher_confidence and b.confidence > a.confidence:
-            primary, secondary = b, a
-        else:
-            primary, secondary = a, b
-
-        merged_attrs = list(dict.fromkeys(a.attributes + b.attributes))
-        merged_bbox = self._merge_bboxes(a, b)
-        sources = _join_sources(a.source, b.source)
+    def _merge_objects(self, objects: list[SceneObject]) -> SceneObject:
+        """Merge a matched object group, calculating aggregate fields once."""
+        primary = min(
+            objects,
+            key=lambda obj: (
+                -obj.confidence if self.config.prefer_higher_confidence else 0,
+                self._object_key(obj),
+            ),
+        )
 
         return SceneObject(
             label=primary.label,
-            bbox=merged_bbox,
-            attributes=merged_attrs,
-            confidence=max(a.confidence, b.confidence),
-            source=sources,
+            bbox=self._merge_bboxes(objects),
+            attributes=sorted({attribute for obj in objects for attribute in obj.attributes}),
+            confidence=max(obj.confidence for obj in objects),
+            source=_join_sources(*(obj.source for obj in objects)),
             canonical_label=primary.canonical_label,
-            uid=a.uid,  # keep the base UID for stable references
+            uid=min((obj.uid for obj in objects), key=str),
         )
 
     # ------------------------------------------------------------------
@@ -279,41 +324,16 @@ class SceneGraphFusion:
         return wup_confidence(la, lb)
 
     @staticmethod
-    def _merge_bboxes(a: SceneObject, b: SceneObject) -> BoundingBox | None:
-        """Return the average bounding box when both exist; otherwise whichever exists."""
-        if a.bbox is None:
-            return b.bbox
-        if b.bbox is None:
-            return a.bbox
+    def _merge_bboxes(objects: list[SceneObject]) -> BoundingBox | None:
+        """Return the average bounding box of every object that supplies one."""
+        bboxes = [obj.bbox for obj in objects if obj.bbox is not None]
+        if not bboxes:
+            return None
         return BoundingBox(
-            x_min=(a.bbox.x_min + b.bbox.x_min) / 2,
-            y_min=(a.bbox.y_min + b.bbox.y_min) / 2,
-            x_max=(a.bbox.x_max + b.bbox.x_max) / 2,
-            y_max=(a.bbox.y_max + b.bbox.y_max) / 2,
-        )
-
-    @staticmethod
-    def _has_duplicate_relationship(
-        existing: list[Relationship], candidate: Relationship
-    ) -> bool:
-        """Check if an equivalent relationship already exists."""
-        for r in existing:
-            if (
-                r.subject_uid == candidate.subject_uid
-                and r.canonical_predicate == candidate.canonical_predicate
-                and r.object_uid == candidate.object_uid
-            ):
-                return True
-        return False
-
-    @staticmethod
-    def _copy_graph(graph: SceneGraph) -> SceneGraph:
-        """Shallow-copy a graph so the original isn't mutated."""
-        return SceneGraph(
-            image_id=graph.image_id,
-            source=graph.source,
-            objects=list(graph.objects),
-            relationships=list(graph.relationships),
+            x_min=sum(bbox.x_min for bbox in bboxes) / len(bboxes),
+            y_min=sum(bbox.y_min for bbox in bboxes) / len(bboxes),
+            x_max=sum(bbox.x_max for bbox in bboxes) / len(bboxes),
+            y_max=sum(bbox.y_max for bbox in bboxes) / len(bboxes),
         )
 
 
@@ -325,4 +345,4 @@ def _join_sources(*sources: str) -> str:
             part = part.strip()
             if part and part not in parts:
                 parts.append(part)
-    return "+".join(parts)
+    return "+".join(sorted(parts))

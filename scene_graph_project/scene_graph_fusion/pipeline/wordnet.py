@@ -83,6 +83,18 @@ def get_noun_hierarchy(noun: str, max_depth: int = 10) -> set[str]:
 
 
 def wup_confidence(term_a: str, term_b: str, max_depth: int = 10) -> float:
+    """Symmetric semantic confidence between two terms.
+
+    The score is the stronger of the two directed hypernym scores, so its
+    value is unchanged when the terms are swapped.
+    """
+    return max(
+        directed_wup_confidence(term_a, term_b, max_depth),
+        directed_wup_confidence(term_b, term_a, max_depth),
+    )
+
+
+def directed_wup_confidence(term_a: str, term_b: str, max_depth: int) -> float:
     """Confidence that *term_a* is a hyponym of *term_b*, combining Wu-Palmer
     similarity with sense coverage.
 

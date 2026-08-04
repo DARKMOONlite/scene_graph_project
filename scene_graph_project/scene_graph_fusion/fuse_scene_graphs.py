@@ -2,23 +2,10 @@
 from argparse import ArgumentParser
 from scene_graph_project.scene_graph_fusion.pipeline import Standardiser, SceneGraphFusion, FusionConfig, save_scene_graph_json,load_scene_graph_json
 from scene_graph_project.scene_graph_fusion.pipeline.wordnet import install_wordnet
+from scene_graph_project.scene_graph_fusion.pipeline.io_formats import collect_scene_graph_files
 from tqdm import tqdm
 import os
 from pathlib import Path
-
-
-def get_files_in_folder(folder: Path, depth: int = 2) -> list[Path]:
-    """Recursively get all files in a folder up to a certain depth."""
-    result = []
-    for root, dirs, files in os.walk(folder):
-        current_depth = len(Path(root).relative_to(folder).parts)
-        if current_depth > depth:
-            continue
-        for file in files:
-            result.append((Path(root).relative_to(folder)) / file)
-    return result
-
-
 
 def main(args):
     
@@ -32,9 +19,9 @@ def main(args):
             print(f"folder '{folder.absolute()}' not found")
             return
         
-    files = [set(sorted(get_files_in_folder(folder, depth=args.depth))) for folder in folders]
+    files = [set(sorted(collect_scene_graph_files(folder, relative=True, depth=args.depth))) for folder in folders]
 
-    common_files = set.intersection(*files)
+    common_files: set[Path] = set.intersection(*files)
     print(f"found {len(common_files)} common files between the two folders")
     
     if not args.output:

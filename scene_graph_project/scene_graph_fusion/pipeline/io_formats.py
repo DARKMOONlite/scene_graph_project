@@ -26,9 +26,15 @@ from scene_graph_project.scene_graph_fusion.pipeline.models import BoundingBox, 
 # Generic JSON
 # ---------------------------------------------------------------------------
 
-def collect_scene_graph_files(input_root: Path) -> list[Path]:
+def collect_scene_graph_files(input_root: Path, relative: bool = False, depth: int = -1) -> list[Path]:
     """Return all JSON files beneath *input_root* in deterministic order."""
-    return sorted(path for path in input_root.rglob("*.json") if path.is_file())
+    if depth < 0:
+        files = sorted(path for path in input_root.rglob("*.json") if path.is_file())
+    else:
+        files = sorted(path for path in input_root.rglob("*.json") if path.is_file() and len(path.relative_to(input_root).parts) <= depth)
+    if relative:
+        files = [path.relative_to(input_root) for path in files]
+    return files
 
 
 def load_scene_graph_json(

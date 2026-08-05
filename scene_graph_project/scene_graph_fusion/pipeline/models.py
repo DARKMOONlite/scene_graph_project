@@ -107,6 +107,7 @@ class SceneObject:
         confidence: Detection confidence from the source model.
         source: Name of the source that produced this object.
         uid: Unique identifier, auto-generated.
+        scene_graph_id: Unique identifier of the scene graph this object belongs to. is set when added to a graph
     """
 
     label: str
@@ -117,6 +118,7 @@ class SceneObject:
     source: str = ""
     canonical_label: str = ""
     uid: uuid.UUID = field(default_factory=uuid.uuid4)
+    scene_graph_id: uuid.UUID|None = None 
 
     def __post_init__(self):
         self.label = self.label.strip().lower()
@@ -132,9 +134,10 @@ class Relationship:
         subject_uid: UID of the subject SceneObject.
         predicate: Relationship label (e.g. "on", "holding", "next to").
         object_uid: UID of the object SceneObject.
-        canonical_predicate: Standardised predicate after normalisation.
+        canonical_predicate: Standardised predicate after normalisation. set in the __init__ method if not provided.
         confidence: Confidence from the source model.
         source: Name of the source that produced this relationship.
+        scene_graph_id: Unique identifier of the scene graph this relationship belongs to. is set when added to a graph
     """
 
     subject_uid: uuid.UUID
@@ -143,6 +146,7 @@ class Relationship:
     confidence: float = 1.0
     source: str = ""
     canonical_predicate: str = ""
+    scene_graph_id: uuid.UUID|None = None 
 
     def __post_init__(self):
         self.predicate = self.predicate.strip().lower()
@@ -171,8 +175,15 @@ class SceneGraph:
     source: str = ""
     objects: list[SceneObject] = field(default_factory=list)
     relationships: list[Relationship] = field(default_factory=list)
+    scene_graph_id:uuid.UUID = field(default_factory=uuid.uuid4)
 
     # --- convenience look-ups ---
+
+    def __post_init__(self):
+        for obj in self.objects:
+            obj.scene_graph_id = self.scene_graph_id
+        for rel in self.relationships:
+            rel.scene_graph_id = self.scene_graph_id
 
     def object_by_uid(self, uid: str) -> SceneObject | None:
         """Return the object with the given UID, or ``None``."""
@@ -193,11 +204,13 @@ class SceneGraph:
 
     def add_object(self, obj: SceneObject) -> SceneObject:
         """Append an object and return it."""
+        obj.scene_graph_id = self.scene_graph_id
         self.objects.append(obj)
         return obj
 
     def add_relationship(self, rel: Relationship) -> Relationship:
         """Append a relationship and return it."""
+        rel.scene_graph_id = self.scene_graph_id
         self.relationships.append(rel)
         return rel
 

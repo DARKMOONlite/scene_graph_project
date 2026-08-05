@@ -1,6 +1,7 @@
 
 from argparse import ArgumentParser
 from scene_graph_project.scene_graph_fusion.pipeline import Standardiser, SceneGraphFusion, FusionConfig, save_scene_graph_json,load_scene_graph_json
+from scene_graph_project.scene_graph_fusion.pipeline.models import SceneGraph
 from scene_graph_project.scene_graph_fusion.pipeline.wordnet import install_wordnet
 from scene_graph_project.scene_graph_fusion.pipeline.io_formats import collect_scene_graph_files
 from tqdm import tqdm
@@ -41,7 +42,7 @@ def main(args):
             std.blacklist(sg)
 
         # 3. Fuse into a single graph
-        merged = fusion.fuse(scene_graphs)
+        merged: SceneGraph = fusion.fuse(scene_graphs)
 
         # 4. Export the result
         save_scene_graph_json(merged, Path(args.output) / filename)

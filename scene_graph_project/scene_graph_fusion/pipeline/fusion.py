@@ -14,15 +14,18 @@ The fusion pipeline:
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from uuid import UUID
 
 from scene_graph_project.scene_graph_fusion.pipeline.models import BoundingBox, Relationship, SceneGraph, SceneObject
-from scene_graph_project.scene_graph_fusion.pipeline.wordnet import wup_confidence
+from scene_graph_project.scene_graph_fusion.pipeline.wordnet import WordNetType, wup_confidence
 from  dataclasses import astuple
-
+from scipy.cluster.hierarchy import DisjointSet
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
+
+
 
 @dataclass
 class FusionConfig:
@@ -43,13 +46,21 @@ class FusionConfig:
     
     #TODO think of better name
     inverse_confidence_calculation: bool = False 
-    """When ``True``, the confidence of a merged object is calculated as the
+    """When ``True``, the confidence of a merged object or relationship is calculated as the
     inverse of the product of the inverse confidences of its constituent objects.
     """
+    relationship_exact_merging: bool = False
+    """When ``True``, relationships are only merged if their canonical predicates match.
+    When ``False``, relationships with the same subject and object are merged, taking the highest confidence predicate or the wupalmer comparison is done."""
+    
+    relationship_wupalmer_merging: bool = True
+    """When ``True``, Wu-Palmer similarity of relationship predicates determines whether they are
+    similar enough to be merged. If ``False``, it takes the highest confidence relationship."""
     
     label_set: set[str] | None = None
-    """Optional set of allowed canonical labels. If provded, the merged scene_graph will only contain objects whose canonical label is in this set. This can be used to enforce a consistent label space across sources."""
+    """Optional set of allowed canonical labels. If provided, the merged scene_graph will only contain objects whose canonical label is in this set. This can be used to enforce a consistent label space across sources."""
     
+
 
 
 # ---------------------------------------------------------------------------
@@ -145,18 +156,8 @@ class SceneGraphFusion:
             for graph_index, graph in enumerate(scene_graphs)
             for obj in graph.objects
         ]
-        parents = {obj.uid: obj.uid for _, obj in objects} # links each object to its parent in the union-find structure, this will be updated
-        graph_sets = {obj.uid: {graph_index} for graph_index, obj in objects} # links each object to the set of input graphs it represents
-
-        def find(uid):
-            """
-            finds the root of the union-find structure for the given uid, and performs path compression to speed up future queries
-            """
-            while parents[uid] != uid:
-                parents[uid] = parents[parents[uid]]
-                uid = parents[uid]
-            return uid
-
+        uid_set = DisjointSet([obj.uid for graph_index, obj in objects]) # union-find structure to track which objects have been merged together
+        uid_to_graph_index = {obj.uid: graph_index for graph_index, obj in objects}
         candidates: list[tuple[float, SceneObject, SceneObject]] = [] # candidates to merge that are above the threshold.
         
         #? compare all objects pairwise, but only consider pairs from different input graphs
@@ -178,58 +179,105 @@ class SceneGraphFusion:
 
 
         #? sorts first by the score, then by the object attributes to ensure deterministic ordering. This is important for reproducibility and consistency across runs.
-        comparison = lambda candidate: (candidate[0], astuple(candidate[1]), astuple(candidate[2]))  
-        for _, obj_a, obj_b in sorted(candidates, key=comparison, reverse=True): # ponytail: global greedy matching
-            root_a, root_b = find(obj_a.uid), find(obj_b.uid)
-            if root_a == root_b or graph_sets[root_a] & graph_sets[root_b]:
+
+        for _, obj_a, obj_b in sorted(candidates, key=lambda candidate: (candidate[0], astuple(candidate[1]), astuple(candidate[2]))  , reverse=True): # ponytail: global greedy matching
+            if obj_a.uid == obj_b.uid:
                 continue
-            parents[root_b] = root_a
-            graph_sets[root_a].update(graph_sets[root_b]) # update the graph sets so that we only merge objects from different input graphs. This prevents merging objects that have already been merged with others from the same input graph.
+            scene_graphs_a = set(uid_to_graph_index[uid] for uid in uid_set.subset(obj_a.uid))
+            scene_graphs_b = set(uid_to_graph_index[uid] for uid in uid_set.subset(obj_b.uid))
+            if scene_graphs_a.intersection(scene_graphs_b):
+                continue
+            uid_set.merge(obj_a.uid, obj_b.uid)
 
-        # Aggregate each connected match group exactly once.
-        groups = {}
-        for _, obj in objects:
-            groups.setdefault(find(obj.uid), []).append(obj)
+        
+        merged_objects = self.merge_objects(scene_graphs, uid_set)
 
-        uid_remap = {}
-        merged_objects = []
-        for group in groups.values():
-            merged_obj = self._merge_objects(group)
-            merged_objects.append(merged_obj)
-            uid_remap.update({obj.uid: merged_obj.uid for obj in group})
-
-        relationship_groups = {}
-        for graph in scene_graphs:
-            for relationship in graph.relationships:
-                # Point edges at their merged endpoints before deduplicating.
-                key = (
-                    uid_remap.get(relationship.subject_uid, relationship.subject_uid),
-                    relationship.canonical_predicate,
-                    uid_remap.get(relationship.object_uid, relationship.object_uid),
-                )
-                relationship_groups.setdefault(key, []).append(relationship)
-
-        merged_relationships = [
-            Relationship(
-                subject_uid=subject_uid,
-                predicate=min(relationship.predicate for relationship in relationships),
-                object_uid=object_uid,
-                canonical_predicate=canonical_predicate,
-                confidence=self._merge_confidences([relationship.confidence for relationship in relationships]),
-                source=_join_sources(
-                    *(relationship.source for relationship in relationships)
-                ),
-            )
-            for (subject_uid, canonical_predicate, object_uid), relationships
-            in sorted(relationship_groups.items(), key=lambda item: tuple(map(str, item[0])))
-        ]
+        merged_relationships:list[Relationship] = self.merge_relationships(scene_graphs,uid_set)
+        
         return SceneGraph(
             image_id=scene_graphs[0].image_id,
             source=_join_sources(*(graph.source for graph in scene_graphs)),
             objects=merged_objects,
             relationships=merged_relationships,
         )
+    # ------------------------------------------------------------------
+    # Object merging
+    # ------------------------------------------------------------------
 
+    
+    def merge_objects(self,scene_graphs:list[SceneGraph],uid_set:DisjointSet)->list[SceneObject]:
+        merged_objects:list[SceneObject] = []
+        
+        objects = [
+            (graph_index, obj)
+            for graph_index, graph in enumerate(scene_graphs)
+            for obj in graph.objects
+        ]
+        
+        for group in uid_set.subsets():
+            objs = [obj for _, obj in objects if obj.uid in group]
+            primary=max(objs, key=lambda obj: obj.confidence)
+            merged_obj = SceneObject(
+                label=primary.label, # take the label from the most confident object
+                bbox=self._merge_bboxes(objs),
+                attributes=sorted({attribute for obj in objs for attribute in obj.attributes}),
+                confidence=self._merge_confidences([obj.confidence for obj in objs]),
+                source=_join_sources(*(obj.source for obj in objs)),
+                canonical_label=max(objs, key=lambda obj: obj.confidence).canonical_label,
+                uid=min((obj.uid for obj in objs), key=str),
+            )
+            merged_objects.append(merged_obj)
+            # uid_remap.update({obj.uid: merged_obj.uid for obj in })
+        return merged_objects
+        
+    # ------------------------------------------------------------------
+    # Relationship merging
+    # ------------------------------------------------------------------
+
+    def merge_relationships(self,scene_graphs:list[SceneGraph],uid_set:DisjointSet)->list[Relationship]:
+        relationships_by_endpoints: dict[tuple[UUID, UUID], list[Relationship]] = {}
+        for graph in scene_graphs:
+            for relationship in graph.relationships:
+                subject_uid = min(uid_set.subset(relationship.subject_uid), key=str)
+                object_uid = min(uid_set.subset(relationship.object_uid), key=str)
+                relationships_by_endpoints.setdefault((subject_uid, object_uid), []).append(
+                    replace(
+                        relationship,
+                        subject_uid=subject_uid,
+                        object_uid=object_uid,
+                    )
+                )
+
+        merged_relationships: list[Relationship] = []
+        for (_, _), relationships in sorted( relationships_by_endpoints.items(), key=lambda item: tuple(map(str, item[0])), ):
+            #? for a set of relationships that share the same subject and object
+            groups: list[list[Relationship]] = []
+            for relationship in relationships:
+                if self.config.relationship_exact_merging:
+                    
+                    group = next((group for group in groups if group[0].canonical_predicate == relationship.canonical_predicate),None,)
+                elif self.config.relationship_wupalmer_merging:
+                    group = next((group for group in groups if 
+                        self._semantic_similarity(group[0], relationship, WordNetType.VERB) >= self.config.semantic_threshold),None,)
+
+                else:
+                    group = groups[0] if groups else None
+
+                if group is None:
+                    groups.append([relationship])
+                else:
+                    group.append(relationship)
+
+            for group in groups:
+                primary = max(group, key=lambda relationship: relationship.confidence)
+                merged_relationships.append(
+                    replace(
+                        primary,
+                        confidence=self._merge_confidences([relationship.confidence for relationship in group]),
+                        source=_join_sources(*(relationship.source for relationship in group)),
+                    )
+                )
+        return merged_relationships
     # ------------------------------------------------------------------
     # Object matching
     # ------------------------------------------------------------------
@@ -280,22 +328,7 @@ class SceneGraphFusion:
         unmatched = [o for o in incoming_objects if o.uid not in used_incoming]
         return matches, unmatched
 
-    # ------------------------------------------------------------------
-    # Object merging
-    # ------------------------------------------------------------------
 
-    def _merge_objects(self, objects: list[SceneObject]) -> SceneObject:
-        """Merge a matched object group, calculating aggregate fields once."""
-        primary=max(objects, key=lambda obj: obj.confidence)
-        return SceneObject(
-            label=primary.label, # take the label from the most confident object
-            bbox=self._merge_bboxes(objects),
-            attributes=sorted({attribute for obj in objects for attribute in obj.attributes}),
-            confidence=self._merge_confidences([obj.confidence for obj in objects]),
-            source=_join_sources(*(obj.source for obj in objects)),
-            canonical_label=max(objects, key=lambda obj: obj.confidence).canonical_label,
-            uid=min((obj.uid for obj in objects), key=str),
-        )
 
     # ------------------------------------------------------------------
     # Helpers
@@ -308,17 +341,26 @@ class SceneGraphFusion:
         return a.bbox.iou(b.bbox)
 
     @staticmethod
-    def _semantic_similarity(a: SceneObject, b: SceneObject) -> float:
+    def _semantic_similarity(a: SceneObject|Relationship, b: SceneObject|Relationship, word_type=WordNetType.NOUN) -> float:
         """Semantic similarity between two objects' canonical labels.
 
         Returns 1.0 for an exact label match, else falls back to Wu-Palmer.
         """
-        la = a.canonical_label
-        lb = b.canonical_label
-        if la == lb:
-            return 1.0
-        return wup_confidence(la, lb)
-
+        if type(a) != type(b):
+            return 0.0
+        if isinstance(a, Relationship) and isinstance(b, Relationship):
+            la = a.predicate
+            lb = b.predicate
+            if la == lb:
+                return 1.0
+            return wup_confidence(la, lb,word_type=word_type)
+        elif isinstance(a, SceneObject) and isinstance(b, SceneObject):
+            la = a.canonical_label
+            lb = b.canonical_label
+            if la == lb:
+                return 1.0
+            return wup_confidence(la, lb, word_type=word_type)
+        return 0.0
     @staticmethod
     def _merge_bboxes(objects: list[SceneObject]) -> BoundingBox | None:
         """Return the average bounding box of every object that supplies one."""

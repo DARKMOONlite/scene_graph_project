@@ -17,7 +17,7 @@ import spacy
 #     spacy = None
     # print("spaCy is not installed. Please install spaCy to use the Standardiser class.")
 from scene_graph_project.scene_graph_fusion.pipeline.wordnet import (
-    get_synsets_for_noun,
+    get_synsets,
     build_hierarchy,
     wup_confidence,
 )

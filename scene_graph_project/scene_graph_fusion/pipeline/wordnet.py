@@ -13,7 +13,16 @@ from nltk.corpus.reader import Synset
 from pprint import pprint
 from pathlib import Path
 import shutil
+from enum import Enum
 KEY_NOUNS = {"plate","tableware","object","container","human"}
+
+class WordNetType(Enum):
+    ADJ = "a"
+    ADJ_SAT = "s"
+    ADV = "r"
+    NOUN = "n"
+    VERB = "v"
+
 
 def install_wordnet():
     """Utility function to download and install the WordNet 2022 corpus."""
@@ -59,17 +68,17 @@ def get_relevant_hypernyms(synset: Synset|list[Synset], key_nouns: set[str], max
     hierarchy = build_hierarchy(synset, max_depth)
     return hierarchy.intersection(key_nouns)
 
-def get_synsets_for_noun(noun: str) -> list[Synset]:
+def get_synsets(word: str, word_type: WordNetType = WordNetType.NOUN) -> list[Synset]:
     """Get the noun synsets for a (possibly compound) noun phrase.
 
     Tries the full phrase first (underscored).  If nothing is found and the
     phrase contains multiple words, collects synsets from each word individually
     so that e.g. "female jockey" yields synsets for both "female" and "jockey".
     """
-    synsets = wn.synsets(noun.replace(" ", "_"), pos=wn.NOUN, lang='eng')
-    if not synsets and " " in noun:
-        for word in noun.split():
-            synsets.extend(wn.synsets(word, pos=wn.NOUN, lang='eng'))
+    synsets = wn.synsets(word.replace(" ", "_"), pos=word_type.value, lang='eng')
+    if not synsets and " " in word:
+        for word in word.split():
+            synsets.extend(wn.synsets(word, pos=word_type.value, lang='eng'))
     return synsets
 
 def get_noun_hierarchy(noun: str, max_depth: int = 10) -> set[str]:
@@ -78,23 +87,23 @@ def get_noun_hierarchy(noun: str, max_depth: int = 10) -> set[str]:
     Spaces are converted to underscores for the WordNet lookup.
     Returns an empty set if no synsets are found.
     """
-    synsets = get_synsets_for_noun(noun)
+    synsets = get_synsets(noun)
     return build_hierarchy(synsets, max_depth) if synsets else set()
 
 
-def wup_confidence(term_a: str, term_b: str, max_depth: int = 10) -> float:
+def wup_confidence(term_a: str, term_b: str, max_depth: int = 10, word_type: WordNetType = WordNetType.NOUN) -> float:
     """Symmetric semantic confidence between two terms.
 
     The score is the stronger of the two directed hypernym scores, so its
     value is unchanged when the terms are swapped.
     """
     return max(
-        directed_wup_confidence(term_a, term_b, max_depth),
-        directed_wup_confidence(term_b, term_a, max_depth),
+        directed_wup_confidence(term_a, term_b, max_depth, word_type),
+        directed_wup_confidence(term_b, term_a, max_depth, word_type),
     )
 
 
-def directed_wup_confidence(term_a: str, term_b: str, max_depth: int) -> float:
+def directed_wup_confidence(term_a: str, term_b: str, max_depth: int, word_type: WordNetType = WordNetType.NOUN) -> float:
     """Confidence that *term_a* is a hyponym of *term_b*, combining Wu-Palmer
     similarity with sense coverage.
 
@@ -108,8 +117,8 @@ def directed_wup_confidence(term_a: str, term_b: str, max_depth: int) -> float:
     when only some senses agree (e.g. "horse" → "animal").
     """
     import math
-    syns_a = get_synsets_for_noun(term_a)
-    syns_b = get_synsets_for_noun(term_b)
+    syns_a = get_synsets(term_a, word_type)
+    syns_b = get_synsets(term_b, word_type)
     if not syns_a or not syns_b:
         return 0.0
     hits = 0

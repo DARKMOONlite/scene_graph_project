@@ -22,7 +22,6 @@ from scene_graph_project.scene_graph_fusion.pipeline.models import BoundingBox, 
 from scene_graph_project.scene_graph_fusion.pipeline.network_flow import NetworkFlow, NodeID, TrackingConfig
 from scene_graph_project.scene_graph_fusion.pipeline.temporal.temporal_scene_graph import TemporalSceneGraph
 from boxmot.trackers.basetracker import BaseTracker
-from boxmot.trackers.bbox.occluboost.occluboost import OccluBoost
 from boxmot.trackers.tracker_zoo import create_tracker
 import numpy as np
 

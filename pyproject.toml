@@ -19,6 +19,7 @@ dependencies = [
 	'boxmot',
 	'numpy < 2.0', 
 	'scipy',
+	'nuscenes-devkit',
 
 ]
 

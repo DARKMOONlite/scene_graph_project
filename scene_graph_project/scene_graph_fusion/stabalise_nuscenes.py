@@ -274,10 +274,12 @@ def main(args):
                 for window_idx, window_rows in enumerate(windows, start=1)
             )
 
-    total_windows = 0
+    successful_windows = 0
+    total_links = 0
+    total_links_unlinked_ratio = 0.0
+    ratio_window_count = 0
     for idx, window_spec in enumerate(window_specs, start=1):
         window_rows = window_spec["rows"]
-        total_windows += 1
         if args.use_action_result_timestamps:
             print(
                 f"\n=== Action window {idx}/{len(window_specs)} "
@@ -324,6 +326,14 @@ def main(args):
 
         temporal_graph = temporal_stabaliser.mot_tracking(scene_graphs, images=image_arrays, visualise=args.visualise)
         compressed_graph = temporal_graph.compress()
+        successful_windows += 1
+        total_links += temporal_graph.num_links
+        unlinked_objects = sum(len(graph.objects) for graph in temporal_graph.graphs) - sum(
+            len(link.instances) for link in temporal_graph.links
+        )
+        if unlinked_objects:
+            total_links_unlinked_ratio += temporal_graph.num_links / unlinked_objects
+            ratio_window_count += 1
         print(
             f"Window {idx}/{len(window_specs)} done: "
             f"frames={len(scene_graphs)}, links={temporal_graph.num_links}, "
@@ -352,7 +362,11 @@ def main(args):
             print(f"Saved compressed graph to: {output_path}")
         if args.visualise:
             compressed_graph.visualise()
-    print(f"Processed windows: {total_windows}")
+    average_links = total_links / successful_windows if successful_windows else 0
+    average_links_unlinked_ratio = total_links_unlinked_ratio / ratio_window_count if ratio_window_count else 0
+    print(f"Successful windows: {successful_windows}")
+    print(f"Average links found: {average_links}")
+    print(f"Average links/unlinked ratio: {average_links_unlinked_ratio}")
 
 if __name__ == "__main__":
     parser = ArgumentParser()

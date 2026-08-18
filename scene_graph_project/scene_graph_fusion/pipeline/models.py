@@ -109,7 +109,6 @@ class SceneObject:
         uid: Unique identifier, auto-generated.
         scene_graph_id: Unique identifier of the scene graph this object belongs to. is set when added to a graph
     """
-
     label: str
     original_identifier: int = -1
     bbox: BoundingBox | None = None
@@ -122,7 +121,8 @@ class SceneObject:
 
     def __post_init__(self):
         self.label = self.label.strip().lower()
-        if not self.canonical_label:
+        self.canonical_label = self.canonical_label.strip().lower()
+        if not self.canonical_label or len(self.canonical_label) == 0:
             self.canonical_label = self.label
 
 

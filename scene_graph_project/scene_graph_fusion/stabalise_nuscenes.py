@@ -1,5 +1,6 @@
 from __future__ import annotations
 from argparse import ArgumentParser
+from os import getpid
 from pathlib import Path
 import json
 import sys
@@ -9,7 +10,7 @@ IMAGES_ROOT = Path("/mnt/sda1/Datasets/nuscenes/v1.0-mini/")
 if str(ILP_PROJECT_ROOT) not in sys.path:
     sys.path.append(str(ILP_PROJECT_ROOT))
 
-from neurosymbolic_pipeline.database_manager import DatabaseManager
+from neurosymbolic_pipeline.database_manager import DBRow, DatabaseManager
 from nuscenes_dev.util.windowing import build_scene_windows_by_length
 from scene_graph_project.scene_graph_fusion.pipeline.io_formats import load_scene_graph_json, scene_graph_to_dict
 from scene_graph_project.scene_graph_fusion.pipeline.temporal.temporal_stabaliser import TemporalStabaliser
@@ -17,6 +18,9 @@ import numpy as np
 from PIL import Image
 from scene_graph_project.scene_graph_fusion.filter_scene_graphs import filter_scene_graph,OBJECT_BLACKLIST
 from scene_graph_project.scene_graph_fusion.pipeline.standardiser import Standardiser
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from tqdm import tqdm
+from multiprocessing import set_start_method
 
 
 def _compressed_name(first_path: Path, last_path: Path) -> str:
@@ -69,25 +73,9 @@ def _sample_to_sample_windows(
     return windows
 
 
-def _build_aligned_timestamp_map(image_rows: list[dict]) -> dict[tuple[str, str], str]:
-    aligned_by_key: dict[tuple[str, str], str] = {}
-    for row in image_rows:
-        timestamp = row.get("timestamp")
-        channel = row.get("channel")
-        aligned_timestamp = row.get("aligned_timestamp")
-        if timestamp is None or channel is None or aligned_timestamp in (None, ""):
-            continue
-        aligned_by_key[(str(timestamp), str(channel))] = str(aligned_timestamp)
-    return aligned_by_key
-
-
-def _aligned_output_frame_path(row: dict, aligned_by_key: dict[tuple[str, str], str]) -> Path:
+def _aligned_output_frame_path(row: dict) -> Path:
     filename = row["filename"]
-    timestamp = row.get("timestamp")
-    channel = row.get("channel")
-    if timestamp is None or channel is None:
-        return Path(filename)
-    aligned_timestamp = aligned_by_key.get((str(timestamp), str(channel)))
+    aligned_timestamp = row.get("aligned_timestamp")
     # ponytail: keep original filename when no aligned row exists.
     if not aligned_timestamp:
         return Path(filename)
@@ -96,6 +84,7 @@ def _aligned_output_frame_path(row: dict, aligned_by_key: dict[tuple[str, str], 
     if not stem_parts:
         return path
     stem_parts[-1] = aligned_timestamp
+    stem_parts = [str(part) for part in stem_parts if part]
     return path.with_name("__".join(stem_parts) + path.suffix)
 
 
@@ -163,6 +152,19 @@ def _resolve_scene_graph_path(args, frame_path: Path) -> Path | None:
     return None
 
 
+def _resolve_images_root(args) -> Path:
+    if args.images_root is not None:
+        return args.images_root
+    for folder in (args.samples_folder, args.sweeps_folder, args.input_folder):
+        if folder is None:
+            continue
+        for ancestor in (folder, *folder.parents):
+            if ancestor.name == "scene_graphs":
+                # ponytail: standard nuScenes layouts keep images beside scene_graphs.
+                return ancestor.parent
+    return IMAGES_ROOT
+
+
 def _relative_parent_for_output(args, graph_path: Path) -> Path:
     if args.samples_folder is not None:
         try:
@@ -222,6 +224,94 @@ def _build_action_result_windows(
     return windows, len(window_ranges)
 
 
+# Each process creates these once, then reuses them for its assigned batch.
+_worker_args = None
+_worker_images_root: Path | None = None
+_worker_standardiser = None
+_worker_stabaliser = None
+
+
+def _initialise_worker(args, images_root: Path) -> None:
+    global _worker_args, _worker_images_root, _worker_standardiser, _worker_stabaliser
+    _worker_args = args
+    _worker_images_root = images_root
+    _worker_standardiser = Standardiser(blacklist=OBJECT_BLACKLIST)
+    _worker_stabaliser = TemporalStabaliser()
+
+def _process_window_job(window_job: dict) -> tuple[int, int, float, int]:
+    args = _worker_args
+    window_rows = window_job["rows"]
+    frame_paths = [Path(row["filename"]) for row in window_rows]
+    scene_graphs = []
+    scene_graph_paths: list[Path] = []
+    image_arrays: list[np.ndarray] = []
+    for frame_path in frame_paths:
+        graph_rel_path = frame_path.with_suffix(".json")
+        is_sweep_frame = bool(frame_path.parts) and frame_path.parts[0] == "sweeps"
+        scene_graph_path = _resolve_scene_graph_path(args, frame_path)
+        if scene_graph_path is None or not scene_graph_path.exists():
+            if is_sweep_frame:
+                continue
+            return 0, 0, 0.0, 0
+        image_path = _worker_images_root / frame_path
+        if not image_path.exists():
+            return 0, 0, 0.0, 0
+        scene_graph_paths.append(scene_graph_path)
+        scene_graph = load_scene_graph_json(scene_graph_path, source=str(graph_rel_path))
+        scene_graphs.append(filter_scene_graph(scene_graph, _worker_standardiser))
+        image_arrays.append(np.array(Image.open(image_path)))
+    if not scene_graphs:
+        return 0, 0, 0.0, 0
+
+    temporal_graph = _worker_stabaliser.mot_tracking(scene_graphs, images=image_arrays, visualise=args.visualise)
+    compressed_graph = temporal_graph.compress()
+    unlinked_objects = sum(len(graph.objects) for graph in temporal_graph.graphs) - sum(
+        len(link.instances) for link in temporal_graph.links
+    )
+
+    if args.use_action_result_timestamps:
+        output_path = (
+            Path(args.output_folder)
+            / window_job["channel"]
+            / (
+                f"{window_job['scene_name']}__{window_job['channel']}__"
+                f"{window_job['start_aligned_timestamp']}-{window_job['end_aligned_timestamp']}.json"
+            )
+        )
+    else:
+        first_output_path = _aligned_output_frame_path(window_rows[0])
+        last_output_path = _aligned_output_frame_path(window_rows[-1])
+        output_path = Path(args.output_folder) / _relative_parent_for_output(
+            args, scene_graph_paths[0]
+        ) / _compressed_name(
+            _resolve_scene_graph_path(args, first_output_path) or first_output_path.with_suffix(".json"),
+            _resolve_scene_graph_path(args, last_output_path) or last_output_path.with_suffix(".json"),
+        )
+    save_scene_graph(compressed_graph, output_path)
+    print(f"Worker {getpid()} completed a window", flush=True)
+    return 1, temporal_graph.num_links, (
+        temporal_graph.num_links / unlinked_objects if unlinked_objects else 0.0
+    ), int(bool(unlinked_objects))
+
+
+def _process_window_jobs(window_jobs: list[dict]) -> tuple[int, int, float, int]:
+    if not window_jobs:
+        return 0, 0, 0.0, 0
+    return tuple(sum(values) for values in zip(*(_process_window_job(job) for job in window_jobs)))
+
+
+def _process_track_batch(tracks: list[list[dict]]) -> tuple[int, int, float, int]:
+    # Keep every window from a track in the same process.
+    window_jobs = [
+        {"rows": window}
+        for track in tracks
+        for window in _sample_to_sample_windows(
+            track, _worker_args.sample_window_size, _worker_args.sample_overlap
+        )
+    ]
+    return _process_window_jobs(window_jobs)
+
+
 def main(args):
     if args.input_folder is None and args.samples_folder is None and args.sweeps_folder is None:
         raise ValueError("Provide at least one of --input_folder, --samples-folder, or --sweeps-folder")
@@ -231,137 +321,56 @@ def main(args):
         raise FileNotFoundError(f"Samples folder does not exist: {args.samples_folder}")
     if args.sweeps_folder is not None and not args.sweeps_folder.exists():
         raise FileNotFoundError(f"Sweeps folder does not exist: {args.sweeps_folder}")
+    if args.threads < 1:
+        raise ValueError("--threads must be at least 1")
+    if args.visualise and args.threads > 1:
+        raise ValueError("--visualise requires --threads 1")
 
     if args.use_action_result_timestamps:
         _validate_window_overlap(args.window_length, args.window_overlap, "--window-length", "--window-overlap")
     else:
         _validate_window_overlap(args.sample_window_size, args.sample_overlap, "--sample-window-size", "--sample-overlap")
 
-    standardiser = Standardiser(blacklist=OBJECT_BLACKLIST)
-    temporal_stabaliser = TemporalStabaliser()
-    db = DatabaseManager(ILP_PROJECT_ROOT / "db/nuscenes.db")
-    image_rows = db.get_rows("images")
-    timestamp_to_aligned_timestamp_map = _build_aligned_timestamp_map(image_rows)
-    window_specs: list[dict] = []
+    db = DatabaseManager(args.db)
+    image_rows:list[DBRow] = db.get_rows("images")
+    images_root = _resolve_images_root(args)
     if args.use_action_result_timestamps:
-        window_specs, unique_range_count = _build_action_result_windows(
+        window_jobs, unique_range_count = _build_action_result_windows(
             db=db,
             image_rows=image_rows,
             window_length=args.window_length,
             window_overlap=args.window_overlap,
         )
         print(
-            f"Found {len(window_specs)} camera windows from action_results "
+            f"Found {len(window_jobs)} camera windows from action_results "
             f"({unique_range_count} unique windows)"
         )
+
+        batches = [window_jobs[i:i + args.batch_size] for i in range(0, len(window_jobs), args.batch_size)]
+        worker = _process_window_jobs
     else:
         tracks = _build_tracks(image_rows)
         print(f"Found {len(tracks)} full tracks in images table")
-        for track_idx, track_rows in enumerate(tracks, start=1):
-            windows = _sample_to_sample_windows(
-                track_rows,
-                sample_window_size=args.sample_window_size,
-                sample_overlap=args.sample_overlap,
-            )
-            if not windows:
-                continue
-            window_specs.extend(
-                {
-                    "track_idx": track_idx,
-                    "window_idx": window_idx,
-                    "rows": window_rows,
-                }
-                for window_idx, window_rows in enumerate(windows, start=1)
-            )
+        # Split whole tracks as evenly as possible across worker processes.
+        batches = [tracks[i:i + args.batch_size] for i in range(0, len(tracks), args.batch_size)]
+        worker = _process_track_batch
 
-    successful_windows = 0
-    total_links = 0
-    total_links_unlinked_ratio = 0.0
-    ratio_window_count = 0
-    for idx, window_spec in enumerate(window_specs, start=1):
-        window_rows = window_spec["rows"]
-        if args.use_action_result_timestamps:
-            print(
-                f"\n=== Action window {idx}/{len(window_specs)} "
-                f"channel={window_spec['channel']} "
-                f"range={window_spec['start_aligned_timestamp']}-{window_spec['end_aligned_timestamp']} ==="
-            )
-        else:
-            print(
-                f"\n=== Track {window_spec['track_idx']} window "
-                f"{window_spec['window_idx']}: {idx}/{len(window_specs)} ==="
-            )
-        frame_paths = [Path(row["filename"]) for row in window_rows]
-        scene_graphs = []
-        scene_graph_paths: list[Path] = []
-        image_arrays: list[np.ndarray] = []
-        skip_window = False
-        for frame_idx, frame_path in enumerate(frame_paths):
-            graph_rel_path = frame_path.with_suffix(".json")
-            is_sweep_frame = bool(frame_path.parts) and frame_path.parts[0] == "sweeps"
-            scene_graph_path = _resolve_scene_graph_path(args, frame_path)
-            if scene_graph_path is None:
-                if is_sweep_frame:
-                    continue
-                print(f"Skipping window {idx}: no configured scene-graph folder for {frame_path}")
-                skip_window = True
-                break
-            if not scene_graph_path.exists():
-                if is_sweep_frame:
-                    continue
-                print(f"Skipping window {idx}: missing scene graph {scene_graph_path}")
-                skip_window = True
-                break
-            image_path = IMAGES_ROOT / frame_path
-            if not image_path.exists():
-                print(f"Skipping window {idx}: missing image {image_path}")
-                skip_window = True
-                break
-            scene_graph_paths.append(scene_graph_path)
-            scene_graph = load_scene_graph_json(scene_graph_path, source=str(graph_rel_path))
-            scene_graphs.append(filter_scene_graph(scene_graph, standardiser))
-            image_arrays.append(np.array(Image.open(image_path)))
-        if skip_window or not scene_graphs:
-            continue
+    if batches:
+        set_start_method("spawn", force=True)
+        with ProcessPoolExecutor(max_workers=args.threads,initializer=_initialise_worker,initargs=(args, images_root),) as executor:
+            futures = [executor.submit(worker, batch) for batch in batches] # type: ignore
+            results = [
+                future.result()
+                # Advance when a batch finishes, rather than when it is submitted.
+                for future in tqdm(as_completed(futures), total=len(futures), desc="Processing batches")
+            ]
+    else:
+        results = []
 
-        temporal_graph = temporal_stabaliser.mot_tracking(scene_graphs, images=image_arrays, visualise=args.visualise)
-        compressed_graph = temporal_graph.compress()
-        successful_windows += 1
-        total_links += temporal_graph.num_links
-        unlinked_objects = sum(len(graph.objects) for graph in temporal_graph.graphs) - sum(
-            len(link.instances) for link in temporal_graph.links
-        )
-        if unlinked_objects:
-            total_links_unlinked_ratio += temporal_graph.num_links / unlinked_objects
-            ratio_window_count += 1
-        print(
-            f"Window {idx}/{len(window_specs)} done: "
-            f"frames={len(scene_graphs)}, links={temporal_graph.num_links}, "
-            f"compressed_objects={len(compressed_graph.objects)}, "
-            f"compressed_relationships={len(compressed_graph.relationships)}"
-        )
-        if args.save:
-            if args.use_action_result_timestamps:
-                # Use scene_name from action_results so filenames match the exs/bk folder naming convention.
-                channel = window_spec["channel"]
-                scene_name = window_spec["scene_name"]
-                start_ts = window_spec["start_aligned_timestamp"]
-                end_ts = window_spec["end_aligned_timestamp"]
-                output_path = Path(args.output_folder) / channel / f"{scene_name}__{channel}__{start_ts}-{end_ts}.json"
-            else:
-                first_graph_path = scene_graph_paths[0]
-                first_output_frame_path = _aligned_output_frame_path(window_rows[0], timestamp_to_aligned_timestamp_map)
-                last_output_frame_path = _aligned_output_frame_path(window_rows[-1], timestamp_to_aligned_timestamp_map)
-                first_output_graph_path = _resolve_scene_graph_path(args, first_output_frame_path) or first_output_frame_path.with_suffix(".json")
-                last_output_graph_path = _resolve_scene_graph_path(args, last_output_frame_path) or last_output_frame_path.with_suffix(".json")
-                relative_parent = _relative_parent_for_output(args, first_graph_path)
-                output_path = Path(args.output_folder) / relative_parent / _compressed_name(
-                    first_output_graph_path, last_output_graph_path
-                )
-            save_scene_graph(compressed_graph, output_path)
-            print(f"Saved compressed graph to: {output_path}")
-        if args.visualise:
-            compressed_graph.visualise()
+    successful_windows = sum(result[0] for result in results)
+    total_links = sum(result[1] for result in results)
+    total_links_unlinked_ratio = sum(result[2] for result in results)
+    ratio_window_count = sum(result[3] for result in results)
     average_links = total_links / successful_windows if successful_windows else 0
     average_links_unlinked_ratio = total_links_unlinked_ratio / ratio_window_count if ratio_window_count else 0
     print(f"Successful windows: {successful_windows}")
@@ -388,15 +397,19 @@ if __name__ == "__main__":
         help="Path to scene graphs for sweep frames (e.g. .../sweeps). Optional.",
     )
     parser.add_argument(
+        "--images-root",
+        type=Path,
+        help="Path containing the samples/ and sweeps/ image folders. Defaults to the parent of scene_graphs.",
+    )
+    parser.add_argument(
         "-o",
         "--output_folder",
         type=Path,
         required=True,
         help="Folder to write compressed graphs",
     )
-
+    parser.add_argument("--db", type=Path, help="Path to the database file",default=ILP_PROJECT_ROOT / "db/nuscenes.db")
     parser.add_argument("-v","--visualise", action="store_true", help="Visualise the tracking results")
-    parser.add_argument("--save", action="store_true", help="Save each compressed graph as JSON")
     parser.add_argument(
         "--use-action-result-timestamps",
         action="store_true",
@@ -426,5 +439,7 @@ if __name__ == "__main__":
         default=1,
         help="How many sample images consecutive windows share (ignored with --use-action-result-timestamps)",
     )
+    parser.add_argument("--threads", type=int, default=1, help="Number of worker processes")
+    parser.add_argument("--batch-size", type=int, default=5, help="Number of windows to process per worker (default: 5)")
     args = parser.parse_args()
     main(args)

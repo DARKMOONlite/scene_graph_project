@@ -14,6 +14,7 @@ The fusion pipeline:
 
 from __future__ import annotations
 
+from math import sqrt
 from dataclasses import astuple, dataclass, field, replace
 from typing import Callable, Hashable
 from uuid import UUID
@@ -80,7 +81,9 @@ class ObjectMatch:
     obj_a: SceneObject
     obj_b: SceneObject
     iou: float
-    semantic_score: float
+    semantic_score: float # semantic similarity
+    
+    
 
     def equals(self,other:ObjectMatch) -> bool:
         """True if this match tracks the same base object as *other*."""
@@ -89,8 +92,15 @@ class ObjectMatch:
         self.obj_b.uid == other.obj_b.uid  
         
         return result
-
-
+    
+    def confidence(self) -> float:
+        #TODO: include the confidences of the objects themselves
+        """Return a combined confidence score for this match."""
+        return self._confidence(self.obj_a,self.obj_b,self.iou,self.semantic_score)
+    @staticmethod
+    def _confidence(obj1,obj2,iou,semantic_score) -> float:
+        """Return a combined confidence score for this match."""
+        return sqrt(obj1.confidence * obj2.confidence) * (iou + semantic_score) / 2.0
 
 
 
@@ -175,7 +185,7 @@ class SceneGraphFusion:
                     or obj_b.bbox is None
                 )
                 if spatial_ok and semantic_score >= self.config.semantic_threshold:
-                    candidates.append((iou + semantic_score, obj_a, obj_b))
+                    candidates.append((ObjectMatch._confidence(obj_a, obj_b, iou, semantic_score), obj_a, obj_b))
 
 
         #? sorts first by the score, then by the object attributes to ensure deterministic ordering. This is important for reproducibility and consistency across runs.
@@ -347,7 +357,7 @@ class SceneGraphFusion:
                     candidates.append(ObjectMatch(base_obj, inc_obj, iou, sem))
 
         # greedy matching — highest combined score first
-        candidates.sort(key=lambda m: m.iou + m.semantic_score, reverse=True)
+        candidates.sort(key=lambda m: m.confidence(), reverse=True)
         used_base: set[UUID] = set()
         used_incoming: set[UUID] = set()
         matches: list[ObjectMatch] = []

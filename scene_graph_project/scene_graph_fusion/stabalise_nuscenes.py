@@ -235,7 +235,10 @@ def _initialise_worker(args, images_root: Path) -> None:
     global _worker_args, _worker_images_root, _worker_standardiser, _worker_stabaliser
     _worker_args = args
     _worker_images_root = images_root
-    _worker_standardiser = Standardiser(blacklist=OBJECT_BLACKLIST)
+    if args.no_blacklist:
+        _worker_standardiser = Standardiser(blacklist=set())
+    else:
+        _worker_standardiser = Standardiser(blacklist=OBJECT_BLACKLIST)
     _worker_stabaliser = TemporalStabaliser()
 
 def _process_window_job(window_job: dict) -> tuple[int, int, float, int]:
@@ -441,5 +444,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--threads", type=int, default=1, help="Number of worker processes")
     parser.add_argument("--batch-size", type=int, default=5, help="Number of windows to process per worker (default: 5)")
+    parser.add_argument("--no-blacklist", action="store_true", help="Disable object label blacklist filtering")
+    
     args = parser.parse_args()
     main(args)

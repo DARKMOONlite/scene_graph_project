@@ -54,6 +54,20 @@ def _build_tracks(image_rows: list[dict]) -> list[list[dict]]:
     return tracks
 
 
+def _annotation_scene_names(db: DatabaseManager) -> set[str]:
+    return {
+        str(row["scene_name"])
+        for row in db.get_rows("human_annotations")
+        if row.get("scene_name") not in (None, "")
+    }
+
+
+def _filter_rows_by_scene(image_rows: list[dict], scene_names: set[str]) -> list[dict]:
+    if any("scene_name" not in row for row in image_rows):
+        raise ValueError("The images table must contain a scene_name column for --only-annotations.")
+    return [row for row in image_rows if row["scene_name"] in scene_names]
+
+
 def _sample_to_sample_windows(
     track: list[dict],
     sample_window_size: int,
@@ -184,12 +198,19 @@ def _build_action_result_windows(
     image_rows: list[dict],
     window_length: int,
     window_overlap: int,
+    scene_names: set[str] | None = None,
 ) -> tuple[list[dict], int]:
     scene_windows = build_scene_windows_by_length(
         db=db,
         window_length=window_length,
         window_overlap=window_overlap,
     )
+    if scene_names is not None:
+        scene_windows = {
+            scene_name: windows
+            for scene_name, windows in scene_windows.items()
+            if scene_name in scene_names
+        }
     window_ranges: list[tuple[str, int, int]] = []
     for scene_name, windows in scene_windows.items():
         for window in windows:
@@ -333,6 +354,10 @@ def main(args):
 
     db = DatabaseManager(args.db)
     image_rows:list[DBRow] = db.get_rows("images")
+    annotated_scenes = _annotation_scene_names(db) if args.only_annotations else None
+    if annotated_scenes is not None:
+        image_rows = _filter_rows_by_scene(image_rows, annotated_scenes)
+        print(f"Restricting processing to {len(annotated_scenes)} scenes in human_annotations")
     images_root = _resolve_images_root(args)
     if args.use_action_result_timestamps:
         window_jobs, unique_range_count = _build_action_result_windows(
@@ -340,6 +365,7 @@ def main(args):
             image_rows=image_rows,
             window_length=args.window_length,
             window_overlap=args.window_overlap,
+            scene_names=annotated_scenes,
         )
         print(
             f"Found {len(window_jobs)} camera windows from action_results "
@@ -409,6 +435,11 @@ if __name__ == "__main__":
         help="Folder to write compressed graphs",
     )
     parser.add_argument("--db", type=Path, help="Path to the database file",default=ILP_PROJECT_ROOT / "db/nuscenes.db")
+    parser.add_argument(
+        "--only-annotations",
+        action="store_true",
+        help="Only stabilise scenes listed in human_annotations.scene_name.",
+    )
     parser.add_argument("-v","--visualise", action="store_true", help="Visualise the tracking results")
     parser.add_argument(
         "--use-action-result-timestamps",
